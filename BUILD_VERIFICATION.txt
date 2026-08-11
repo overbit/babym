@@ -1,0 +1,19 @@
+Local Baby Monitor v0.5.0 - build verification
+
+Verified in the build environment on 2026-08-11:
+- Kotlin application sources compile successfully against Android API 36.
+- Android resources/layouts compile and link successfully with aapt2.
+- minSdkVersion 26; targetSdkVersion 36.
+- Protocol v2 packet smoke tests include torch command/state and noise-alert payloads.
+- Parent video surface can detach/reattach without stopping MonitorStreamClient.
+- MonitorActivity handles orientation/screen-size configuration changes without Activity recreation.
+- Remote torch is routed from Parent Monitor to BabyMonitorService over the existing socket.
+- Torch availability/state is returned to the parent and unsupported cameras disable the control.
+- Noise detection reuses AudioStreamer PCM samples and sends only a small local alert event.
+- App-level PIN/code authentication remains absent.
+
+Not verified here because two physical Android phones are unavailable:
+- Real Wi-Fi Direct interoperability on the target OEM devices.
+- Torch behavior on the target baby phone camera hardware.
+- Noise sensitivity in the target room/device microphone environment.
+- Rotation behavior on the exact parent device/OEM build.
