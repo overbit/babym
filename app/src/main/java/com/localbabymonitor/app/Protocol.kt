@@ -17,6 +17,8 @@ object Protocol {
     const val TYPE_TORCH_COMMAND = 5
     const val TYPE_TORCH_STATE = 6
     const val TYPE_NOISE_ALERT = 7
+    const val TYPE_NOISE_CONTROL = 8
+    const val TYPE_NOISE_STATE = 9
 
     private const val MAX_PACKET_SIZE = 4 * 1024 * 1024
 
@@ -146,6 +148,20 @@ object Protocol {
             available = payload[0].toInt() != 0,
             enabled = payload[1].toInt() != 0
         )
+    }
+
+    fun packNoiseControl(enabled: Boolean): ByteArray = byteArrayOf(if (enabled) 1 else 0)
+
+    fun unpackNoiseControl(payload: ByteArray): Boolean {
+        require(payload.size == 1) { "Invalid noise control" }
+        return payload[0].toInt() != 0
+    }
+
+    fun packNoiseState(enabled: Boolean): ByteArray = byteArrayOf(if (enabled) 1 else 0)
+
+    fun unpackNoiseState(payload: ByteArray): Boolean {
+        require(payload.size == 1) { "Invalid noise state" }
+        return payload[0].toInt() != 0
     }
 
     fun packNoiseAlert(levelPercent: Int): ByteArray {

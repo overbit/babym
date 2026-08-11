@@ -22,6 +22,7 @@ class MonitorStreamClient(
     private val onVideoSize: (Int, Int) -> Unit,
     private val onStreaming: () -> Unit,
     private val onTorchState: (available: Boolean, enabled: Boolean) -> Unit,
+    private val onNoiseState: (enabled: Boolean) -> Unit,
     private val onNoiseAlert: (levelPercent: Int) -> Unit
 ) {
     private val running = AtomicBoolean(false)
@@ -105,6 +106,7 @@ class MonitorStreamClient(
                     val state = Protocol.unpackTorchState(packet.payload)
                     onTorchState(state.available, state.enabled)
                 }
+                Protocol.TYPE_NOISE_STATE -> onNoiseState(Protocol.unpackNoiseState(packet.payload))
                 Protocol.TYPE_NOISE_ALERT -> onNoiseAlert(Protocol.unpackNoiseAlert(packet.payload))
             }
         }
@@ -146,6 +148,14 @@ class MonitorStreamClient(
         val stream = output ?: return false
         return runCatching {
             Protocol.writePacket(stream, Protocol.TYPE_TORCH_COMMAND, 0, 0, Protocol.packTorchCommand(enabled))
+            true
+        }.getOrElse { false }
+    }
+
+    fun setNoiseAlerts(enabled: Boolean): Boolean {
+        val stream = output ?: return false
+        return runCatching {
+            Protocol.writePacket(stream, Protocol.TYPE_NOISE_CONTROL, 0, 0, Protocol.packNoiseControl(enabled))
             true
         }.getOrElse { false }
     }

@@ -2,6 +2,10 @@ package com.localbabymonitor.app
 
 import android.Manifest
 import android.app.Activity
+import android.app.Notification
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -27,7 +31,12 @@ import android.widget.LinearLayout
 import android.widget.TextView
 
 class MonitorActivity : Activity() {
-    companion object { private const val REQUEST_PERMISSIONS = 2001 }
+    companion object {
+        private const val REQUEST_P2P_PERMISSION = 2001
+        private const val REQUEST_NOTIFICATION_PERMISSION = 2002
+        private const val NOISE_CHANNEL_ID = "noise_alerts"
+        private const val NOISE_NOTIFICATION_ID = 21
+    }
 
     private lateinit var p2p: MonitorP2pController
     private lateinit var status: TextView
@@ -40,7 +49,9 @@ class MonitorActivity : Activity() {
     private lateinit var liveTimer: TextView
     private lateinit var torchButton: Button
     private lateinit var audioButton: Button
+    private lateinit var noiseButton: Button
     private lateinit var noiseAlertBanner: TextView
+    private lateinit var noiseAlertDetail: TextView
     private lateinit var liveHeader: View
     private lateinit var liveControls: View
     private lateinit var liveInfoCard: View
@@ -51,10 +62,14 @@ class MonitorActivity : Activity() {
     private var muted = false
     private var torchAvailable = false
     private var torchOn = false
+    private var noiseAlertsEnabled = true
     private var fullscreen = false
     private var liveStartedAt = 0L
+    private var notificationPermissionRequested = false
 
     private val hideNoiseAlert = Runnable { noiseAlertBanner.visibility = View.GONE }
+    private val torchAckTimeout = Runnable { updateTorch(torchAvailable, torchOn) }
+    private val noiseAckTimeout = Runnable { updateNoiseAlertState(noiseAlertsEnabled) }
     private val timerTick = object : Runnable {
         override fun run() {
             if (liveStartedAt == 0L || liveScreen.visibility != View.VISIBLE) return
@@ -68,6 +83,7 @@ class MonitorActivity : Activity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_monitor)
         applySafeArea(findViewById(R.id.monitorRoot))
+        createNoiseNotificationChannel()
         bindViews()
         bindActions()
         p2p = MonitorP2pController(
@@ -79,6 +95,7 @@ class MonitorActivity : Activity() {
             onStateChanged = { runOnUiThread { updateReadiness() } }
         ).also { it.start() }
         updateReadiness()
+        updateNoiseAlertState(noiseAlertsEnabled)
     }
 
     private fun bindViews() {
@@ -92,7 +109,9 @@ class MonitorActivity : Activity() {
         liveTimer = findViewById(R.id.liveTimer)
         torchButton = findViewById(R.id.torchButton)
         audioButton = findViewById(R.id.audioButton)
+        noiseButton = findViewById(R.id.noiseButton)
         noiseAlertBanner = findViewById(R.id.noiseAlertBanner)
+        noiseAlertDetail = findViewById(R.id.noiseAlertDetail)
         liveHeader = findViewById(R.id.liveHeader)
         liveControls = findViewById(R.id.liveControls)
         liveInfoCard = findViewById(R.id.liveInfoCard)
@@ -113,7 +132,21 @@ class MonitorActivity : Activity() {
         torchButton.isEnabled = false
         torchButton.setOnClickListener {
             if (!torchAvailable) return@setOnClickListener
-            if (client?.setTorch(!torchOn) == true) torchButton.text = "Torch…"
+            if (client?.setTorch(!torchOn) == true) {
+                torchButton.isEnabled = false
+                torchButton.text = "Updating torch…"
+                handler.removeCallbacks(torchAckTimeout)
+                handler.postDelayed(torchAckTimeout, 2_000)
+            }
+        }
+        noiseButton.setOnClickListener {
+            val requested = !noiseAlertsEnabled
+            if (client?.setNoiseAlerts(requested) == true) {
+                noiseButton.isEnabled = false
+                noiseButton.text = "Updating alerts…"
+                handler.removeCallbacks(noiseAckTimeout)
+                handler.postDelayed(noiseAckTimeout, 2_000)
+            }
         }
         findViewById<View>(R.id.videoFrame).setOnClickListener { if (fullscreen) toggleFullscreen() }
         videoSurface.holder.addCallback(object : SurfaceHolder.Callback {
@@ -128,7 +161,7 @@ class MonitorActivity : Activity() {
     private fun ensureReadyAndScan() {
         val permission = requiredPermission()
         when {
-            checkSelfPermission(permission) != PackageManager.PERMISSION_GRANTED -> requestPermissions(arrayOf(permission), REQUEST_PERMISSIONS)
+            checkSelfPermission(permission) != PackageManager.PERMISSION_GRANTED -> requestPermissions(arrayOf(permission), REQUEST_P2P_PERMISSION)
             !wifiEnabled() -> startActivity(Intent(Settings.ACTION_WIFI_SETTINGS))
             !locationEnabled() -> startActivity(Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS))
             else -> p2p.discover()
@@ -137,8 +170,13 @@ class MonitorActivity : Activity() {
 
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-        if (requestCode == REQUEST_PERMISSIONS && grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED) ensureReadyAndScan()
-        else if (requestCode == REQUEST_PERMISSIONS) status.text = "Nearby-device permission is required to find the baby camera."
+        when (requestCode) {
+            REQUEST_P2P_PERMISSION -> {
+                if (grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED) ensureReadyAndScan()
+                else status.text = "Nearby-device permission is required to find the baby camera."
+            }
+            REQUEST_NOTIFICATION_PERMISSION -> updateNoiseAlertState(noiseAlertsEnabled)
+        }
     }
 
     private fun renderPeers(peers: List<WifiP2pDevice>) {
@@ -169,6 +207,7 @@ class MonitorActivity : Activity() {
             onVideoSize = { w, h -> runOnUiThread { videoSurface.setVideoSize(w, h) } },
             onStreaming = { runOnUiThread { showLive() } },
             onTorchState = { available, enabled -> runOnUiThread { updateTorch(available, enabled) } },
+            onNoiseState = { enabled -> runOnUiThread { updateNoiseAlertState(enabled) } },
             onNoiseAlert = { level -> runOnUiThread { showNoiseAlert(level) } }
         ).also {
             it.setMuted(muted)
@@ -187,20 +226,40 @@ class MonitorActivity : Activity() {
         if (liveStartedAt == 0L) liveStartedAt = SystemClock.elapsedRealtime()
         handler.removeCallbacks(timerTick)
         handler.post(timerTick)
+        requestNoiseNotificationPermissionIfNeeded()
     }
 
     private fun updateTorch(available: Boolean, enabled: Boolean) {
+        handler.removeCallbacks(torchAckTimeout)
         torchAvailable = available
         torchOn = enabled
         torchButton.isEnabled = available
-        torchButton.text = when { !available -> "No torch"; enabled -> "Torch on"; else -> "Torch off" }
+        torchButton.text = when {
+            !available -> "No torch"
+            enabled -> "Torch on"
+            else -> "Torch off"
+        }
+    }
+
+    private fun updateNoiseAlertState(enabled: Boolean) {
+        handler.removeCallbacks(noiseAckTimeout)
+        noiseAlertsEnabled = enabled
+        noiseButton.isEnabled = true
+        noiseButton.text = if (enabled) "Noise alerts on" else "Noise alerts off"
+        noiseAlertDetail.text = when {
+            !enabled -> "Noise alerts · Off"
+            notificationsAllowed() -> "Noise alerts · On · banner, sound, vibration and notification"
+            else -> "Noise alerts · On · in-app sound and vibration"
+        }
     }
 
     private fun showNoiseAlert(level: Int) {
-        noiseAlertBanner.text = if (level >= 70) "Loud noise detected" else "Noise detected"
+        if (!noiseAlertsEnabled) return
+        val title = if (level >= 70) "Loud noise detected" else "Noise detected"
+        noiseAlertBanner.text = "$title · $level%"
         noiseAlertBanner.visibility = View.VISIBLE
         handler.removeCallbacks(hideNoiseAlert)
-        handler.postDelayed(hideNoiseAlert, 4000)
+        handler.postDelayed(hideNoiseAlert, 4_000)
         ToneGenerator(AudioManager.STREAM_ALARM, 75).also { tone ->
             tone.startTone(ToneGenerator.TONE_PROP_BEEP2, 700)
             handler.postDelayed({ runCatching { tone.release() } }, 900)
@@ -209,6 +268,51 @@ class MonitorActivity : Activity() {
             (getSystemService(Context.VIBRATOR_SERVICE) as Vibrator)
                 .vibrate(VibrationEffect.createOneShot(450, VibrationEffect.DEFAULT_AMPLITUDE))
         }
+        postNoiseNotification(title, level)
+    }
+
+    private fun createNoiseNotificationChannel() {
+        val channel = NotificationChannel(
+            NOISE_CHANNEL_ID,
+            "Noise alerts",
+            NotificationManager.IMPORTANCE_HIGH
+        ).apply {
+            description = "Alerts when sustained noise is detected by the baby phone"
+            setSound(null, null)
+            enableVibration(false)
+        }
+        getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
+    }
+
+    private fun requestNoiseNotificationPermissionIfNeeded() {
+        if (Build.VERSION.SDK_INT < 33 || notificationsAllowed() || notificationPermissionRequested) return
+        notificationPermissionRequested = true
+        requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), REQUEST_NOTIFICATION_PERMISSION)
+    }
+
+    private fun notificationsAllowed(): Boolean =
+        Build.VERSION.SDK_INT < 33 || checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
+
+    private fun postNoiseNotification(title: String, level: Int) {
+        if (!notificationsAllowed()) return
+        val openIntent = PendingIntent.getActivity(
+            this,
+            0,
+            Intent(this, MonitorActivity::class.java).apply {
+                addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+            },
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        )
+        val notification = Notification.Builder(this, NOISE_CHANNEL_ID)
+            .setSmallIcon(R.drawable.ic_monitor)
+            .setContentTitle(title)
+            .setContentText("Baby Camera detected sustained noise ($level%).")
+            .setCategory(Notification.CATEGORY_ALARM)
+            .setPriority(Notification.PRIORITY_HIGH)
+            .setAutoCancel(true)
+            .setContentIntent(openIntent)
+            .build()
+        getSystemService(NotificationManager::class.java).notify(NOISE_NOTIFICATION_ID, notification)
     }
 
     private fun toggleFullscreen() {
@@ -243,7 +347,11 @@ class MonitorActivity : Activity() {
         }
     }
 
-    override fun onResume() { super.onResume(); updateReadiness() }
+    override fun onResume() {
+        super.onResume()
+        updateReadiness()
+        if (::noiseAlertDetail.isInitialized) updateNoiseAlertState(noiseAlertsEnabled)
+    }
     override fun onBackPressed() { if (fullscreen) toggleFullscreen() else super.onBackPressed() }
 
     override fun onDestroy() {

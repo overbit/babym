@@ -79,8 +79,9 @@
 
         <LinearLayout android:id="@+id/liveInfoCard" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="10dp" android:background="@drawable/bg_card" android:orientation="vertical" android:padding="14dp">
             <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="Connection · Wi‑Fi Direct" android:textColor="@color/text_primary" android:textSize="14sp" android:textStyle="bold" />
-            <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="4dp" android:text="Noise alerts · Enabled locally on the baby phone" android:textColor="@color/text_secondary" android:textSize="12sp" />
-            <Button android:id="@+id/reconnectButton" style="@style/Button.Secondary" android:layout_width="match_parent" android:layout_height="44dp" android:layout_marginTop="10dp" android:text="Reconnect stream" />
+            <TextView android:id="@+id/noiseAlertDetail" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="4dp" android:text="Noise alerts · On" android:textColor="@color/text_secondary" android:textSize="12sp" />
+            <Button android:id="@+id/noiseButton" style="@style/Button.Secondary" android:layout_width="match_parent" android:layout_height="44dp" android:layout_marginTop="10dp" android:text="Noise alerts on" />
+            <Button android:id="@+id/reconnectButton" style="@style/Button.Secondary" android:layout_width="match_parent" android:layout_height="44dp" android:layout_marginTop="8dp" android:text="Reconnect stream" />
         </LinearLayout>
     </LinearLayout>
 </FrameLayout>

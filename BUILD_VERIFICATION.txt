@@ -1,19 +1,21 @@
-Local Baby Monitor v0.5.0 - build verification
+Local Baby Monitor v0.6.0 - build verification
 
 Verified in the build environment on 2026-08-11:
-- Kotlin application sources compile successfully against Android API 36.
+- Kotlin sources compile successfully against Android API 36.
 - Android resources/layouts compile and link successfully with aapt2.
-- minSdkVersion 26; targetSdkVersion 36.
-- Protocol v2 packet smoke tests include torch command/state and noise-alert payloads.
-- Parent video surface can detach/reattach without stopping MonitorStreamClient.
-- MonitorActivity handles orientation/screen-size configuration changes without Activity recreation.
-- Remote torch is routed from Parent Monitor to BabyMonitorService over the existing socket.
-- Torch availability/state is returned to the parent and unsupported cameras disable the control.
-- Noise detection reuses AudioStreamer PCM samples and sends only a small local alert event.
+- minSdkVersion 26; targetSdkVersion 36; versionCode 8.
+- Signed APK verifies with APK Signature Scheme v2/v3.
+- Remote torch commands use the existing local TCP session and return baby-side torch availability/state.
+- Torch UI waits for state acknowledgement and falls back after a short timeout.
+- Noise detection reuses the existing AudioRecord PCM stream; no second recorder is opened.
+- Parent can remotely enable/disable noise detection and receives acknowledged state.
+- Noise events produce an in-app banner, alarm tone, vibration, and (when permission is granted) a local Android notification.
+- Android 13+ POST_NOTIFICATIONS permission is declared/requested only for system notifications.
+- Working v0.5.1 Wi-Fi Direct cleanup/PBC/listen-state path is carried forward.
+- Rotation-safe stream surface attach/detach remains present.
 - App-level PIN/code authentication remains absent.
 
-Not verified here because two physical Android phones are unavailable:
-- Real Wi-Fi Direct interoperability on the target OEM devices.
-- Torch behavior on the target baby phone camera hardware.
-- Noise sensitivity in the target room/device microphone environment.
-- Rotation behavior on the exact parent device/OEM build.
+Physical-device validation still required:
+- Torch behavior on the target Baby Camera hardware.
+- Noise threshold sensitivity in the intended room/device microphone environment.
+- Notification behavior with device-specific Do Not Disturb/battery policies.
