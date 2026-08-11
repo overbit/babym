@@ -15,11 +15,13 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Slider
@@ -46,6 +48,10 @@ import com.overbit.babymonitor.ParentUnitViewModel
 import com.overbit.babymonitor.R
 import com.overbit.babymonitor.Role
 import com.overbit.babymonitor.p2p.WifiDirectManager
+import kotlinx.coroutines.delay
+
+/** How long to wait for group negotiation before calling the attempt off. */
+private const val CONNECT_TIMEOUT_MS = 45_000L
 
 /** The viewing end: finds the baby unit, joins its group, and plays what it sends. */
 @Composable
@@ -90,8 +96,19 @@ private fun PeerPicker(
     val peers by wifiDirect.peers.collectAsStateWithLifecycle()
     val wifiEnabled by wifiDirect.wifiP2pEnabled.collectAsStateWithLifecycle()
     val message by wifiDirect.message.collectAsStateWithLifecycle()
+    val connectingTo by wifiDirect.connectingTo.collectAsStateWithLifecycle()
+    val timedOutMessage = stringResource(R.string.connect_timed_out)
 
     LaunchedEffect(Unit) { wifiDirect.discoverPeers() }
+
+    // Negotiation either forms a group or stalls silently — give up rather than leave the
+    // spinner running forever.
+    LaunchedEffect(connectingTo) {
+        if (connectingTo != null) {
+            delay(CONNECT_TIMEOUT_MS)
+            wifiDirect.cancelConnect(timedOutMessage)
+        }
+    }
 
     Column(
         modifier = Modifier
@@ -107,6 +124,7 @@ private fun PeerPicker(
             text = when {
                 !wifiEnabled -> stringResource(R.string.wifi_off)
                 isGroupOwner -> stringResource(R.string.parent_is_owner)
+                connectingTo != null -> stringResource(R.string.connecting_hint)
                 peers.isEmpty() -> stringResource(R.string.searching)
                 else -> stringResource(R.string.pick_baby_unit)
             },
@@ -122,24 +140,42 @@ private fun PeerPicker(
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             items(peers, key = { it.deviceAddress }) { device ->
+                val pending = connectingTo != null
                 Card(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clickable { wifiDirect.connect(device) }
+                        // One attempt at a time: a second connect() cancels the first.
+                        .clickable(enabled = !pending) { wifiDirect.connect(device) }
                 ) {
-                    Column(Modifier.padding(16.dp)) {
-                        Text(
-                            text = device.deviceName.ifBlank { device.deviceAddress },
-                            style = MaterialTheme.typography.titleMedium,
-                        )
-                        Text(
-                            text = device.deviceAddress,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
+                    Row(
+                        modifier = Modifier.padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(Modifier.weight(1f)) {
+                            Text(
+                                text = device.deviceName.ifBlank { device.deviceAddress },
+                                style = MaterialTheme.typography.titleMedium,
+                            )
+                            Text(
+                                text = device.deviceAddress,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        if (pending) {
+                            CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+                        }
                     }
                 }
             }
+        }
+
+        connectingTo?.let {
+            Text(
+                text = stringResource(R.string.connecting_to, it),
+                style = MaterialTheme.typography.bodyMedium,
+            )
+            Spacer(Modifier.height(8.dp))
         }
 
         message?.let {
@@ -147,14 +183,29 @@ private fun PeerPicker(
             Spacer(Modifier.height(8.dp))
         }
 
-        Button(
-            onClick = { wifiDirect.discoverPeers() },
-            enabled = wifiEnabled,
+        if (connectingTo != null) {
+            OutlinedButton(
+                onClick = { wifiDirect.cancelConnect() },
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text(stringResource(R.string.cancel))
+            }
+        } else {
+            Button(
+                onClick = { wifiDirect.discoverPeers() },
+                enabled = wifiEnabled,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text(stringResource(R.string.search_again))
+            }
+        }
+        TextButton(
+            onClick = {
+                wifiDirect.cancelConnect()
+                onBack()
+            },
             modifier = Modifier.fillMaxWidth(),
         ) {
-            Text(stringResource(R.string.search_again))
-        }
-        TextButton(onClick = onBack, modifier = Modifier.fillMaxWidth()) {
             Text(stringResource(R.string.back))
         }
     }

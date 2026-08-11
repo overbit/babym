@@ -51,16 +51,31 @@ class WifiDirectManager(private val context: Context) {
     private val _message = MutableStateFlow<String?>(null)
     val message: StateFlow<String?> = _message.asStateFlow()
 
+    /** Name of the peer a [connect] is in flight for, or null when nothing is pending. */
+    private val _connectingTo = MutableStateFlow<String?>(null)
+    val connectingTo: StateFlow<String?> = _connectingTo.asStateFlow()
+
     val isSupported: Boolean get() = manager != null
 
+    /**
+     * The current channel, re-initialized on demand.
+     *
+     * The framework hands back a dead channel whenever the Wi-Fi stack restarts, and the only
+     * notice is [WifiP2pManager.ChannelListener]. Re-opening it here rather than once at
+     * registration keeps a later tap from quietly doing nothing.
+     */
+    private fun channel(): WifiP2pManager.Channel? {
+        val mgr = manager ?: return null
+        channel?.let { return it }
+        return mgr.initialize(context, Looper.getMainLooper()) {
+            Log.w(TAG, "Wi-Fi Direct channel disconnected")
+            channel = null
+        }.also { channel = it }
+    }
+
     fun register() {
-        val mgr = manager ?: return
-        if (channel == null) {
-            channel = mgr.initialize(context, Looper.getMainLooper()) {
-                Log.w(TAG, "Wi-Fi Direct channel disconnected")
-                channel = null
-            }
-        }
+        if (manager == null) return
+        channel()
         // WIFI_P2P_STATE_CHANGED is only broadcast on change, so seed the state from the radio
         // itself; Wi-Fi Direct needs Wi-Fi switched on regardless.
         _wifiP2pEnabled.value = wifiManager?.isWifiEnabled == true
@@ -90,7 +105,7 @@ class WifiDirectManager(private val context: Context) {
 
     private fun handleBroadcast(intent: Intent) {
         val mgr = manager ?: return
-        val ch = channel ?: return
+        val ch = channel() ?: return
         when (intent.action) {
             WifiP2pManager.WIFI_P2P_STATE_CHANGED_ACTION -> {
                 val state = intent.getIntExtra(WifiP2pManager.EXTRA_WIFI_STATE, -1)
@@ -106,6 +121,7 @@ class WifiDirectManager(private val context: Context) {
             WifiP2pManager.WIFI_P2P_CONNECTION_CHANGED_ACTION -> {
                 mgr.requestConnectionInfo(ch) { info: WifiP2pInfo ->
                     _connectionInfo.value = if (info.groupFormed) info else null
+                    if (info.groupFormed) _connectingTo.value = null
                 }
             }
 
@@ -121,7 +137,8 @@ class WifiDirectManager(private val context: Context) {
     /** Baby unit: become the group owner so the parent always knows where to connect. */
     fun createGroup() {
         val mgr = manager ?: return
-        val ch = channel ?: return
+        val ch = channel() ?: return notReady()
+        _message.value = null
         mgr.requestGroupInfo(ch) { group ->
             if (group != null && group.isGroupOwner) {
                 // Already hosting; refresh the connection info so the UI catches up.
@@ -140,36 +157,57 @@ class WifiDirectManager(private val context: Context) {
 
     private fun createGroupNow() {
         val mgr = manager ?: return
-        val ch = channel ?: return
+        val ch = channel() ?: return notReady()
         mgr.createGroup(ch, actionListener("Create group"))
     }
 
     /** Parent unit: look for baby units in range. */
     fun discoverPeers() {
         val mgr = manager ?: return
-        val ch = channel ?: return
+        val ch = channel() ?: return notReady()
+        _message.value = null
         mgr.discoverPeers(ch, actionListener("Discover"))
     }
 
     /** Parent unit: join the selected baby unit's group. */
     fun connect(device: WifiP2pDevice) {
         val mgr = manager ?: return
-        val ch = channel ?: return
+        val ch = channel() ?: return notReady()
         val config = WifiP2pConfig().apply {
             deviceAddress = device.deviceAddress
             // The baby unit is already the owner; never contest it.
             groupOwnerIntent = 0
         }
-        mgr.connect(ch, config, actionListener("Connect"))
+        _message.value = null
+        // Negotiation runs for several seconds and the baby unit may have to accept an
+        // invitation first, so hold the pending name for the UI to show meanwhile.
+        _connectingTo.value = device.deviceName.ifBlank { device.deviceAddress }
+        mgr.connect(ch, config, actionListener("Connect", onFailure = { _connectingTo.value = null }))
+    }
+
+    /** Abandons an in-flight [connect]; [reason] is surfaced to the user when given. */
+    fun cancelConnect(reason: String? = null) {
+        _connectingTo.value = null
+        _message.value = reason
+        val mgr = manager ?: return
+        val ch = channel() ?: return
+        // Nothing pending is a perfectly normal outcome here, so failures stay quiet.
+        mgr.cancelConnect(ch, actionListener("Cancel connect", report = false))
     }
 
     /** Tears the group down on either side. */
     fun disconnect() {
         val mgr = manager ?: return
-        val ch = channel ?: return
-        mgr.removeGroup(ch, actionListener("Disconnect"))
+        val ch = channel() ?: return notReady()
+        mgr.removeGroup(ch, actionListener("Disconnect", report = false))
         _connectionInfo.value = null
+        _connectingTo.value = null
         _peers.value = emptyList()
+    }
+
+    private fun notReady() {
+        Log.w(TAG, "No Wi-Fi Direct channel available")
+        _message.value = "Wi-Fi Direct isn't ready. Turn Wi-Fi off and on, then try again."
     }
 
     fun clearMessage() {
@@ -178,6 +216,8 @@ class WifiDirectManager(private val context: Context) {
 
     private fun actionListener(
         label: String,
+        report: Boolean = true,
+        onFailure: () -> Unit = {},
         onSuccess: () -> Unit = {},
     ) = object : WifiP2pManager.ActionListener {
         override fun onSuccess() {
@@ -186,6 +226,7 @@ class WifiDirectManager(private val context: Context) {
         }
 
         override fun onFailure(reason: Int) {
+            onFailure()
             val why = when (reason) {
                 WifiP2pManager.P2P_UNSUPPORTED -> "Wi-Fi Direct is not supported on this device"
                 WifiP2pManager.BUSY -> "Wi-Fi is busy, try again in a moment"
@@ -194,7 +235,7 @@ class WifiDirectManager(private val context: Context) {
                 else -> "reason $reason"
             }
             Log.w(TAG, "$label failed: $why")
-            _message.value = "$label failed: $why"
+            if (report) _message.value = "$label failed: $why"
         }
     }
 }

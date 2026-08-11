@@ -37,6 +37,10 @@
     <string name="parent_is_owner">This phone became the group owner. Stop monitoring on both phones and start the camera phone first.</string>
     <string name="search_again">Search again</string>
     <string name="connecting">Connecting to the camera phone…</string>
+    <string name="connecting_to">Connecting to %1$s…</string>
+    <string name="connecting_hint">If the camera phone asks you to accept an invitation, tap Accept there.</string>
+    <string name="connect_timed_out">The camera phone did not answer. Make sure it is showing “Waiting for the viewer”, then try again.</string>
+    <string name="cancel">Cancel</string>
     <string name="waiting_for_video">Waiting for video…</string>
     <string name="noise_alert">Noise detected — tap to dismiss</string>
     <string name="alert_threshold">Noise alert level</string>
