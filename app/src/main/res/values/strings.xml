@@ -1,0 +1,5 @@
+<resources>
+    <string name="app_name">Local Baby Monitor</string>
+    <string name="baby_role">Baby camera</string>
+    <string name="monitor_role">Parent monitor</string>
+</resources>

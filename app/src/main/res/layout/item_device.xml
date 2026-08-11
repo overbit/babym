@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/deviceRow"
+    android:layout_width="match_parent"
+    android:layout_height="86dp"
+    android:layout_marginBottom="9dp"
+    android:background="@drawable/bg_device_row"
+    android:clickable="true"
+    android:focusable="true"
+    android:foreground="?android:attr/selectableItemBackground"
+    android:gravity="center_vertical"
+    android:orientation="horizontal"
+    android:paddingLeft="14dp"
+    android:paddingRight="12dp">
+
+    <ImageView
+        android:layout_width="46dp"
+        android:layout_height="46dp"
+        android:contentDescription="Nearby device"
+        android:src="@drawable/ic_monitor" />
+
+    <LinearLayout
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginLeft="13dp"
+        android:layout_weight="1"
+        android:orientation="vertical">
+        <TextView android:id="@+id/deviceName" android:layout_width="match_parent" android:layout_height="wrap_content" android:maxLines="1" android:ellipsize="end" android:text="Baby Camera" android:textColor="@color/text_primary" android:textSize="15sp" android:textStyle="bold" />
+        <TextView android:id="@+id/deviceState" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="4dp" android:text="Available nearby" android:textColor="@color/text_secondary" android:textSize="12sp" />
+    </LinearLayout>
+
+    <TextView
+        android:layout_width="82dp"
+        android:layout_height="40dp"
+        android:background="@drawable/bg_outline_brand"
+        android:gravity="center"
+        android:text="Connect"
+        android:textColor="@color/brand_dark"
+        android:textSize="13sp"
+        android:textStyle="bold" />
+</LinearLayout>
