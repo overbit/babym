@@ -1,0 +1,57 @@
+<resources>
+    <string name="app_name">Baby Monitor</string>
+
+    <!-- Role picker -->
+    <string name="role_title">Baby Monitor</string>
+    <string name="role_subtitle">Two phones, connected directly over Wi-Fi Direct. No internet, no mobile data, no account.</string>
+    <string name="role_baby">Use this phone as the camera</string>
+    <string name="role_parent">Use this phone to watch</string>
+    <string name="no_wifi_direct">This phone does not support Wi-Fi Direct.</string>
+
+    <!-- Permissions -->
+    <string name="permissions_baby">The camera phone needs access to the camera, the microphone and nearby devices.</string>
+    <string name="permissions_parent">Finding the camera phone needs permission to connect to nearby devices.</string>
+    <string name="grant">Grant permissions</string>
+    <string name="try_again">Try again</string>
+    <string name="back">Back</string>
+
+    <!-- Baby unit -->
+    <string name="baby_unit_title">Camera unit</string>
+    <string name="baby_unit_hint">Tap start, then pick this phone on the other device.</string>
+    <string name="baby_unit_waiting">Ready. Waiting for the other phone to connect.</string>
+    <string name="baby_unit_parent_connected">Connected. Streaming video and sound.</string>
+    <string name="baby_unit_device_name">This phone appears as \"%1$s\"</string>
+    <string name="wifi_off">Turn Wi-Fi on to use Wi-Fi Direct.</string>
+    <string name="preview_idle">Preview appears here once monitoring starts.</string>
+    <string name="starting_camera">Starting the camera…</string>
+    <string name="start_monitoring">Start monitoring</string>
+    <string name="stop_monitoring">Stop monitoring</string>
+    <string name="light_on">Light on</string>
+    <string name="light_off">Light off</string>
+    <string name="switch_camera">Flip camera</string>
+
+    <!-- Parent unit -->
+    <string name="parent_unit_title">Viewer</string>
+    <string name="searching">Looking for the camera phone…</string>
+    <string name="pick_baby_unit">Tap the camera phone to connect.</string>
+    <string name="parent_is_owner">This phone became the group owner. Stop monitoring on both phones and start the camera phone first.</string>
+    <string name="search_again">Search again</string>
+    <string name="connecting">Connecting to the camera phone…</string>
+    <string name="waiting_for_video">Waiting for video…</string>
+    <string name="noise_alert">Noise detected — tap to dismiss</string>
+    <string name="alert_threshold">Noise alert level</string>
+    <string name="light">Light</string>
+    <string name="flip">Flip</string>
+    <string name="mute">Mute</string>
+    <string name="unmute">Unmute</string>
+    <string name="dim">Dim</string>
+    <string name="dimmed_hint">Tap to wake the screen</string>
+    <string name="disconnect">Disconnect</string>
+
+    <!-- Foreground service -->
+    <string name="baby_unit_channel">Camera unit</string>
+    <string name="baby_unit_notification_title">Baby Monitor — camera on</string>
+    <string name="baby_unit_notification_waiting">Waiting for the viewer phone</string>
+    <string name="baby_unit_notification_connected">Streaming to the viewer phone</string>
+    <string name="stop">Stop</string>
+</resources>

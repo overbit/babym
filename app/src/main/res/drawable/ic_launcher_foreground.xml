@@ -1,0 +1,16 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Simple camera body with a lens, centred in the adaptive-icon safe zone. -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M36,38 L44,38 L48,32 L60,32 L64,38 L72,38 A6,6 0 0,1 78,44 L78,70 A6,6 0 0,1 72,76 L36,76 A6,6 0 0,1 30,70 L30,44 A6,6 0 0,1 36,38 Z" />
+    <path
+        android:fillColor="#FF101418"
+        android:pathData="M54,44 m-12,0 a12,12 0 1,0 24,0 a12,12 0 1,0 -24,0" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M54,57 m-6,0 a6,6 0 1,0 12,0 a6,6 0 1,0 -12,0" />
+</vector>

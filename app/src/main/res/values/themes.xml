@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Dark platform theme: the parent unit is normally used in a dark room. -->
+    <style name="Theme.BabyMonitor" parent="android:Theme.Material.NoActionBar">
+        <item name="android:statusBarColor">#FF101418</item>
+        <item name="android:navigationBarColor">#FF101418</item>
+    </style>
+</resources>
