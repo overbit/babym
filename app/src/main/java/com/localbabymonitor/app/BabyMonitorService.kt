@@ -200,7 +200,10 @@ class BabyMonitorService : Service() {
         runCatching {
             manager.startListening(channel, object : WifiP2pManager.ActionListener {
                 override fun onSuccess() = Unit
-                override fun onFailure(reason: Int) = Unit
+                override fun onFailure(reason: Int) {
+                    // Group ownership is already established, so a listen-state
+                    // failure should not stop the camera service.
+                }
             })
         }
     }
@@ -246,6 +249,7 @@ class BabyMonitorService : Service() {
                         handleControlPacket(packet, writer)
                     }
                 } catch (_: Exception) {
+                    // Socket close/EOF ends this parent session.
                 } finally {
                     clientAlive.set(false)
                 }
@@ -255,6 +259,7 @@ class BabyMonitorService : Service() {
                 Thread.sleep(250)
             }
         } catch (_: Exception) {
+            // The accept loop waits for the next parent connection.
         } finally {
             clientAlive.set(false)
             runCatching { socket.close() }
@@ -270,13 +275,13 @@ class BabyMonitorService : Service() {
             Protocol.TYPE_TORCH_COMMAND -> {
                 val requested = runCatching { Protocol.unpackTorchCommand(packet.payload) }.getOrNull() ?: return
                 val video = videoStreamer
-                if (video == null) {
-                    writer.packet(Protocol.TYPE_TORCH_STATE, 0, 0, Protocol.packTorchState(false, false))
-                    return
-                }
-                video.setTorch(requested) { available, enabled ->
-                    writer.packet(Protocol.TYPE_TORCH_STATE, 0, 0, Protocol.packTorchState(available, enabled))
-                }
+                val available = video?.setTorch(requested) == true
+                writer.packet(
+                    Protocol.TYPE_TORCH_STATE,
+                    0,
+                    0,
+                    Protocol.packTorchState(available, available && requested)
+                )
             }
             Protocol.TYPE_NOISE_CONTROL -> {
                 val enabled = runCatching { Protocol.unpackNoiseControl(packet.payload) }.getOrNull() ?: return
@@ -298,14 +303,24 @@ class BabyMonitorService : Service() {
     }
 
     private fun sendNoiseState(writer: StreamWriter) {
-        writer.packet(Protocol.TYPE_NOISE_STATE, 0, 0, Protocol.packNoiseState(noiseAlertsEnabled))
+        writer.packet(
+            Protocol.TYPE_NOISE_STATE,
+            0,
+            0,
+            Protocol.packNoiseState(noiseAlertsEnabled)
+        )
     }
 
     private fun startMedia(writer: StreamWriter) {
         stopMedia()
         videoStreamer = VideoStreamer(this, useFrontCamera).also { it.start(writer) }
         audioStreamer = AudioStreamer { levelPercent ->
-            writer.packet(Protocol.TYPE_NOISE_ALERT, 0, 0, Protocol.packNoiseAlert(levelPercent))
+            writer.packet(
+                Protocol.TYPE_NOISE_ALERT,
+                0,
+                0,
+                Protocol.packNoiseAlert(levelPercent)
+            )
         }.also {
             it.setNoiseAlertsEnabled(noiseAlertsEnabled)
             it.start(writer)

@@ -7,8 +7,6 @@ import android.hardware.camera2.CameraCharacteristics
 import android.hardware.camera2.CameraDevice
 import android.hardware.camera2.CameraManager
 import android.hardware.camera2.CaptureRequest
-import android.hardware.camera2.CaptureResult
-import android.hardware.camera2.TotalCaptureResult
 import android.media.MediaCodec
 import android.media.MediaCodecInfo
 import android.media.MediaFormat
@@ -132,88 +130,33 @@ class VideoStreamer(
         }, cameraHandler)
     }
 
-    private fun applyRepeatingRequest(onTorchApplied: ((Boolean, Boolean) -> Unit)? = null) {
-        val camera = cameraDevice
-        val session = captureSession
-        val surface = inputSurface
-        if (camera == null || session == null || surface == null) {
-            if (onTorchApplied != null) {
-                torchEnabled = false
-                onTorchApplied(torchAvailable, false)
-            }
-            return
-        }
-
-        val requestedTorch = torchEnabled
+    private fun applyRepeatingRequest() {
+        val camera = cameraDevice ?: return
+        val session = captureSession ?: return
+        val surface = inputSurface ?: return
         val request = camera.createCaptureRequest(CameraDevice.TEMPLATE_RECORD).apply {
             addTarget(surface)
             set(CaptureRequest.CONTROL_MODE, CaptureRequest.CONTROL_MODE_AUTO)
+            // Manual FLASH_MODE_TORCH is reliably honored when AE is explicitly ON.
             set(CaptureRequest.CONTROL_AE_MODE, CaptureRequest.CONTROL_AE_MODE_ON)
             if (torchAvailable) {
                 set(
                     CaptureRequest.FLASH_MODE,
-                    if (requestedTorch) CaptureRequest.FLASH_MODE_TORCH else CaptureRequest.FLASH_MODE_OFF
+                    if (torchEnabled) CaptureRequest.FLASH_MODE_TORCH else CaptureRequest.FLASH_MODE_OFF
                 )
             }
         }.build()
-
-        if (onTorchApplied == null) {
-            runCatching { session.setRepeatingRequest(request, null, cameraHandler) }
-            return
-        }
-
-        var captureResults = 0
-        var delivered = false
-        val callback = object : CameraCaptureSession.CaptureCallback() {
-            override fun onCaptureCompleted(
-                session: CameraCaptureSession,
-                request: CaptureRequest,
-                result: TotalCaptureResult
-            ) {
-                if (delivered) return
-                captureResults += 1
-                val flashState = result.get(CaptureResult.FLASH_STATE)
-
-                val confirmed = when {
-                    !requestedTorch -> flashState != CaptureResult.FLASH_STATE_FIRED
-                    flashState == CaptureResult.FLASH_STATE_FIRED -> true
-                    else -> false
-                }
-
-                if (confirmed || captureResults >= 5) {
-                    delivered = true
-                    if (requestedTorch && !confirmed) {
-                        torchEnabled = false
-                        applyRepeatingRequest()
-                    }
-                    onTorchApplied(torchAvailable, torchEnabled && confirmed)
-                }
-            }
-        }
-
-        runCatching {
-            session.setRepeatingRequest(request, callback, cameraHandler)
-        }.onFailure {
-            torchEnabled = false
-            onTorchApplied(torchAvailable, false)
-        }
+        runCatching { session.setRepeatingRequest(request, null, cameraHandler) }
     }
 
-    fun setTorch(enabled: Boolean, onState: (available: Boolean, enabled: Boolean) -> Unit) {
+    fun setTorch(enabled: Boolean): Boolean {
         if (!torchAvailable || !running.get()) {
             torchEnabled = false
-            onState(torchAvailable, false)
-            return
+            return false
         }
-        val handler = cameraHandler
-        if (handler == null) {
-            onState(torchAvailable, torchEnabled)
-            return
-        }
-        handler.post {
-            torchEnabled = enabled
-            applyRepeatingRequest(onState)
-        }
+        torchEnabled = enabled
+        cameraHandler?.post { applyRepeatingRequest() } ?: return false
+        return true
     }
 
     private fun drainEncoder(writer: StreamWriter) {
