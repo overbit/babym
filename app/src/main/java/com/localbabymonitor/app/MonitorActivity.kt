@@ -52,6 +52,7 @@ class MonitorActivity : Activity() {
     private lateinit var noiseButton: Button
     private lateinit var noiseAlertBanner: TextView
     private lateinit var noiseAlertDetail: TextView
+    private lateinit var noiseAlertExplanation: TextView
     private lateinit var liveHeader: View
     private lateinit var liveControls: View
     private lateinit var liveInfoCard: View
@@ -112,6 +113,7 @@ class MonitorActivity : Activity() {
         noiseButton = findViewById(R.id.noiseButton)
         noiseAlertBanner = findViewById(R.id.noiseAlertBanner)
         noiseAlertDetail = findViewById(R.id.noiseAlertDetail)
+        noiseAlertExplanation = findViewById(R.id.noiseAlertExplanation)
         liveHeader = findViewById(R.id.liveHeader)
         liveControls = findViewById(R.id.liveControls)
         liveInfoCard = findViewById(R.id.liveInfoCard)
@@ -139,6 +141,7 @@ class MonitorActivity : Activity() {
                 handler.postDelayed(torchAckTimeout, 2_000)
             }
         }
+        noiseButton.isEnabled = false
         noiseButton.setOnClickListener {
             val requested = !noiseAlertsEnabled
             if (client?.setNoiseAlerts(requested) == true) {
@@ -227,6 +230,7 @@ class MonitorActivity : Activity() {
         handler.removeCallbacks(timerTick)
         handler.post(timerTick)
         requestNoiseNotificationPermissionIfNeeded()
+        updateNoiseAlertState(noiseAlertsEnabled)
     }
 
     private fun updateTorch(available: Boolean, enabled: Boolean) {
@@ -244,13 +248,20 @@ class MonitorActivity : Activity() {
     private fun updateNoiseAlertState(enabled: Boolean) {
         handler.removeCallbacks(noiseAckTimeout)
         noiseAlertsEnabled = enabled
-        noiseButton.isEnabled = true
-        noiseButton.text = if (enabled) "Noise alerts on" else "Noise alerts off"
+        noiseButton.isEnabled = client?.isRunning == true
+        noiseButton.text = if (enabled) "Turn noise alerts off" else "Turn noise alerts on"
         noiseAlertDetail.text = when {
-            !enabled -> "Noise alerts · Off"
-            notificationsAllowed() -> "Noise alerts · On · banner, sound, vibration and notification"
-            else -> "Noise alerts · On · in-app sound and vibration"
+            !enabled -> "Off · the baby phone is not checking sound level"
+            notificationsAllowed() -> "On · banner, sound, vibration and notification"
+            else -> "On · banner, sound and vibration"
         }
+        noiseAlertDetail.setTextColor(getColor(if (enabled) R.color.success else R.color.text_secondary))
+        noiseAlertExplanation.text =
+            "How it works: audio is analysed locally on the baby phone. " +
+                "If sound stays above the trigger level for about 0.75 seconds, " +
+                "an alert is sent here. After an alert there is a 12-second cooldown. " +
+                "The percentage shown is a relative microphone level, not calibrated dB. " +
+                "Detection stays on this local connection; nothing is uploaded."
     }
 
     private fun showNoiseAlert(level: Int) {
@@ -352,6 +363,7 @@ class MonitorActivity : Activity() {
         updateReadiness()
         if (::noiseAlertDetail.isInitialized) updateNoiseAlertState(noiseAlertsEnabled)
     }
+
     override fun onBackPressed() { if (fullscreen) toggleFullscreen() else super.onBackPressed() }
 
     override fun onDestroy() {
