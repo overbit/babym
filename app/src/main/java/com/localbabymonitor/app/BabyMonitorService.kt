@@ -236,7 +236,6 @@ class BabyMonitorService : Service() {
             val writer = StreamWriter(socket, output)
             currentWriter = writer
             startMedia(writer)
-            sendTorchState(writer)
             sendNoiseState(writer)
 
             commandThread = Thread({
@@ -268,39 +267,11 @@ class BabyMonitorService : Service() {
     }
 
     private fun handleControlPacket(packet: Protocol.Packet, writer: StreamWriter) {
-        when (packet.type) {
-            Protocol.TYPE_TORCH_COMMAND -> {
-                val requested = runCatching { Protocol.unpackTorchCommand(packet.payload) }.getOrNull() ?: return
-                val video = videoStreamer
-                if (video == null) {
-                    writer.packet(Protocol.TYPE_TORCH_STATE, 0, 0, Protocol.packTorchState(false, false))
-                    return
-                }
-                val accepted = video.setTorch(requested)
-                writer.packet(
-                    Protocol.TYPE_TORCH_STATE,
-                    0,
-                    0,
-                    Protocol.packTorchState(video.isTorchAvailable, accepted && requested)
-                )
-            }
-            Protocol.TYPE_NOISE_CONTROL -> {
-                val enabled = runCatching { Protocol.unpackNoiseControl(packet.payload) }.getOrNull() ?: return
-                noiseAlertsEnabled = enabled
-                audioStreamer?.setNoiseAlertsEnabled(enabled)
-                sendNoiseState(writer)
-            }
-        }
-    }
-
-    private fun sendTorchState(writer: StreamWriter) {
-        val video = videoStreamer
-        writer.packet(
-            Protocol.TYPE_TORCH_STATE,
-            0,
-            0,
-            Protocol.packTorchState(video?.isTorchAvailable == true, video?.isTorchEnabled == true)
-        )
+        if (packet.type != Protocol.TYPE_NOISE_CONTROL) return
+        val enabled = runCatching { Protocol.unpackNoiseControl(packet.payload) }.getOrNull() ?: return
+        noiseAlertsEnabled = enabled
+        audioStreamer?.setNoiseAlertsEnabled(enabled)
+        sendNoiseState(writer)
     }
 
     private fun sendNoiseState(writer: StreamWriter) {
@@ -341,7 +312,6 @@ class BabyMonitorService : Service() {
         if (writer != null && !writer.failed) {
             videoStreamer?.stop()
             videoStreamer = VideoStreamer(this, useFrontCamera).also { it.start(writer) }
-            sendTorchState(writer)
         }
         updateStatus(if (useFrontCamera) "Front camera selected" else "Rear camera selected")
     }
