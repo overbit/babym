@@ -200,10 +200,7 @@ class BabyMonitorService : Service() {
         runCatching {
             manager.startListening(channel, object : WifiP2pManager.ActionListener {
                 override fun onSuccess() = Unit
-                override fun onFailure(reason: Int) {
-                    // Group ownership is already established, so a listen-state
-                    // failure should not stop the camera service.
-                }
+                override fun onFailure(reason: Int) = Unit
             })
         }
     }
@@ -279,14 +276,13 @@ class BabyMonitorService : Service() {
                     writer.packet(Protocol.TYPE_TORCH_STATE, 0, 0, Protocol.packTorchState(false, false))
                     return
                 }
-                video.setTorch(requested) { available, enabled ->
-                    writer.packet(
-                        Protocol.TYPE_TORCH_STATE,
-                        0,
-                        0,
-                        Protocol.packTorchState(available, enabled)
-                    )
-                }
+                val accepted = video.setTorch(requested)
+                writer.packet(
+                    Protocol.TYPE_TORCH_STATE,
+                    0,
+                    0,
+                    Protocol.packTorchState(video.isTorchAvailable, accepted && requested)
+                )
             }
             Protocol.TYPE_NOISE_CONTROL -> {
                 val enabled = runCatching { Protocol.unpackNoiseControl(packet.payload) }.getOrNull() ?: return
