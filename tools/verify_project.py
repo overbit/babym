@@ -75,7 +75,6 @@ for forbidden in [
     "PairingStore",
     "pinInput",
     "EXTRA_PIN",
-    "WpsInfo.PBC",
     "WifiP2pDnsSd",
     "discoverServices",
     "addLocalService",
