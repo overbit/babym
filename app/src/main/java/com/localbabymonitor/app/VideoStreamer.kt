@@ -8,7 +8,6 @@ import android.hardware.camera2.CameraDevice
 import android.hardware.camera2.CameraManager
 import android.hardware.camera2.CameraMetadata
 import android.hardware.camera2.CaptureRequest
-import android.hardware.camera2.TotalCaptureResult
 import android.media.MediaCodec
 import android.media.MediaCodecInfo
 import android.media.MediaFormat
@@ -128,48 +127,35 @@ class VideoStreamer(
     }
 
     @Suppress("DEPRECATION")
-    private fun createCaptureSession(onTorchApplied: ((Boolean, Boolean) -> Unit)? = null) {
-        val camera = cameraDevice
-        val surface = inputSurface
-        if (camera == null || surface == null) {
-            onTorchApplied?.invoke(torchAvailable, false)
-            return
-        }
+    private fun createCaptureSession() {
+        val camera = cameraDevice ?: return
+        val surface = inputSurface ?: return
         runCatching { captureSession?.close() }
         captureSession = null
         camera.createCaptureSession(listOf(surface), object : CameraCaptureSession.StateCallback() {
             override fun onConfigured(session: CameraCaptureSession) {
-                if (!running.get()) {
+                if (!running.get() || cameraDevice !== camera) {
                     session.close()
-                    onTorchApplied?.invoke(torchAvailable, false)
                     return
                 }
                 captureSession = session
-                applyRepeatingRequest(onTorchApplied)
+                applyRepeatingRequest()
             }
 
             override fun onConfigureFailed(session: CameraCaptureSession) {
                 session.close()
-                if (onTorchApplied != null) {
-                    torchEnabled = false
-                    onTorchApplied(torchAvailable, false)
-                }
             }
         }, cameraHandler)
     }
 
-    private fun applyRepeatingRequest(onTorchApplied: ((Boolean, Boolean) -> Unit)? = null) {
-        val camera = cameraDevice
-        val session = captureSession
-        val surface = inputSurface
-        val cameraId = selectedCameraId
-        if (camera == null || session == null || surface == null || cameraId == null) {
-            onTorchApplied?.invoke(torchAvailable, false)
-            return
-        }
+    private fun applyRepeatingRequest(): Boolean {
+        val camera = cameraDevice ?: return false
+        val session = captureSession ?: return false
+        val surface = inputSurface ?: return false
+        val cameraId = selectedCameraId ?: return false
 
-        val request = runCatching {
-            camera.createCaptureRequest(CameraDevice.TEMPLATE_RECORD).apply {
+        return runCatching {
+            val request = camera.createCaptureRequest(CameraDevice.TEMPLATE_RECORD).apply {
                 addTarget(surface)
                 set(CaptureRequest.CONTROL_MODE, CameraMetadata.CONTROL_MODE_AUTO)
                 set(CaptureRequest.CONTROL_AE_MODE, CaptureRequest.CONTROL_AE_MODE_ON)
@@ -185,31 +171,9 @@ class VideoStreamer(
                     )
                 }
             }.build()
-        }.getOrElse {
-            torchEnabled = false
-            onTorchApplied?.invoke(torchAvailable, false)
-            return
-        }
-
-        var acknowledged = false
-        val callback = if (onTorchApplied == null) null else object : CameraCaptureSession.CaptureCallback() {
-            override fun onCaptureCompleted(
-                session: CameraCaptureSession,
-                request: CaptureRequest,
-                result: TotalCaptureResult
-            ) {
-                if (acknowledged) return
-                acknowledged = true
-                onTorchApplied(torchAvailable, torchEnabled)
-            }
-        }
-
-        runCatching {
-            session.setRepeatingRequest(request, callback, cameraHandler)
-        }.onFailure {
-            torchEnabled = false
-            onTorchApplied?.invoke(torchAvailable, false)
-        }
+            session.setRepeatingRequest(request, null, cameraHandler)
+            true
+        }.getOrDefault(false)
     }
 
     private fun supportsContinuousVideoAf(cameraId: String): Boolean {
@@ -227,34 +191,28 @@ class VideoStreamer(
             ?: ranges.maxByOrNull { it.upper }
     }
 
-    fun setTorch(enabled: Boolean, onState: (available: Boolean, enabled: Boolean) -> Unit) {
+    fun setTorch(enabled: Boolean): Boolean {
         if (!torchAvailable || !running.get()) {
             torchEnabled = false
-            onState(torchAvailable, false)
-            return
+            return false
         }
-        val handler = cameraHandler
-        if (handler == null) {
-            onState(torchAvailable, false)
-            return
-        }
+        val handler = cameraHandler ?: return false
+        if (cameraDevice == null || captureSession == null) return false
+
+        torchEnabled = enabled
         handler.post {
-            torchEnabled = enabled
+            // Some vendor Camera2 HALs latch flash configuration when a session is created.
+            // Rebuild the capture session so the requested torch state is part of its first
+            // repeating request. The MediaCodec input surface remains alive, so the network
+            // connection and encoder do not restart.
             val session = captureSession
-            if (session == null || cameraDevice == null) {
-                torchEnabled = false
-                onState(torchAvailable, false)
-                return@post
-            }
-            // Some vendor Camera2 stacks cache flash settings for a configured session.
-            // Tear down and rebuild the capture session so the new torch state is part of
-            // the first repeating request for that session instead of an in-place update.
-            runCatching { session.stopRepeating() }
-            runCatching { session.abortCaptures() }
-            runCatching { session.close() }
+            runCatching { session?.stopRepeating() }
+            runCatching { session?.abortCaptures() }
+            runCatching { session?.close() }
             captureSession = null
-            createCaptureSession(onState)
+            createCaptureSession()
         }
+        return true
     }
 
     private fun drainEncoder(writer: StreamWriter) {
