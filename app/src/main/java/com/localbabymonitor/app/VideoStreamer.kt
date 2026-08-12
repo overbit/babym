@@ -6,12 +6,15 @@ import android.hardware.camera2.CameraCaptureSession
 import android.hardware.camera2.CameraCharacteristics
 import android.hardware.camera2.CameraDevice
 import android.hardware.camera2.CameraManager
+import android.hardware.camera2.CameraMetadata
 import android.hardware.camera2.CaptureRequest
+import android.hardware.camera2.TotalCaptureResult
 import android.media.MediaCodec
 import android.media.MediaCodecInfo
 import android.media.MediaFormat
 import android.os.Handler
 import android.os.HandlerThread
+import android.util.Range
 import android.util.Size
 import android.view.Surface
 import java.util.concurrent.atomic.AtomicBoolean
@@ -32,6 +35,7 @@ class VideoStreamer(
     private var codecThread: Thread? = null
     private var inputSurface: Surface? = null
     private var selectedSize = Size(1280, 720)
+    private var selectedCameraId: String? = null
     @Volatile private var torchAvailable = false
     @Volatile private var torchEnabled = false
 
@@ -43,6 +47,7 @@ class VideoStreamer(
         if (running.getAndSet(true)) return
         try {
             val cameraId = chooseCameraId()
+            selectedCameraId = cameraId
             val characteristics = cameraManager.getCameraCharacteristics(cameraId)
             torchAvailable = characteristics.get(CameraCharacteristics.FLASH_INFO_AVAILABLE) == true
             torchEnabled = false
@@ -58,7 +63,7 @@ class VideoStreamer(
                         return
                     }
                     cameraDevice = camera
-                    createCaptureSession(camera)
+                    createCaptureSession()
                 }
 
                 override fun onDisconnected(camera: CameraDevice) {
@@ -77,10 +82,20 @@ class VideoStreamer(
     }
 
     private fun chooseCameraId(): String {
-        val wanted = if (useFrontCamera) CameraCharacteristics.LENS_FACING_FRONT else CameraCharacteristics.LENS_FACING_BACK
-        return cameraManager.cameraIdList.firstOrNull { id ->
+        val wanted = if (useFrontCamera) {
+            CameraCharacteristics.LENS_FACING_FRONT
+        } else {
+            CameraCharacteristics.LENS_FACING_BACK
+        }
+        val matching = cameraManager.cameraIdList.filter { id ->
             cameraManager.getCameraCharacteristics(id).get(CameraCharacteristics.LENS_FACING) == wanted
-        } ?: cameraManager.cameraIdList.first()
+        }
+        if (!useFrontCamera) {
+            matching.firstOrNull { id ->
+                cameraManager.getCameraCharacteristics(id).get(CameraCharacteristics.FLASH_INFO_AVAILABLE) == true
+            }?.let { return it }
+        }
+        return matching.firstOrNull() ?: cameraManager.cameraIdList.first()
     }
 
     private fun chooseVideoSize(cameraId: String): Size {
@@ -112,51 +127,134 @@ class VideoStreamer(
         codecThread = Thread({ drainEncoder(writer) }, "h264-encoder").also { it.start() }
     }
 
-    private fun createCaptureSession(camera: CameraDevice) {
-        val surface = inputSurface ?: return
+    @Suppress("DEPRECATION")
+    private fun createCaptureSession(onTorchApplied: ((Boolean, Boolean) -> Unit)? = null) {
+        val camera = cameraDevice
+        val surface = inputSurface
+        if (camera == null || surface == null) {
+            onTorchApplied?.invoke(torchAvailable, false)
+            return
+        }
+        runCatching { captureSession?.close() }
+        captureSession = null
         camera.createCaptureSession(listOf(surface), object : CameraCaptureSession.StateCallback() {
             override fun onConfigured(session: CameraCaptureSession) {
                 if (!running.get()) {
                     session.close()
+                    onTorchApplied?.invoke(torchAvailable, false)
                     return
                 }
                 captureSession = session
-                applyRepeatingRequest()
+                applyRepeatingRequest(onTorchApplied)
             }
 
             override fun onConfigureFailed(session: CameraCaptureSession) {
                 session.close()
+                if (onTorchApplied != null) {
+                    torchEnabled = false
+                    onTorchApplied(torchAvailable, false)
+                }
             }
         }, cameraHandler)
     }
 
-    private fun applyRepeatingRequest() {
-        val camera = cameraDevice ?: return
-        val session = captureSession ?: return
-        val surface = inputSurface ?: return
-        val request = camera.createCaptureRequest(CameraDevice.TEMPLATE_RECORD).apply {
-            addTarget(surface)
-            set(CaptureRequest.CONTROL_MODE, CaptureRequest.CONTROL_MODE_AUTO)
-            // Manual FLASH_MODE_TORCH is reliably honored when AE is explicitly ON.
-            set(CaptureRequest.CONTROL_AE_MODE, CaptureRequest.CONTROL_AE_MODE_ON)
-            if (torchAvailable) {
-                set(
-                    CaptureRequest.FLASH_MODE,
-                    if (torchEnabled) CaptureRequest.FLASH_MODE_TORCH else CaptureRequest.FLASH_MODE_OFF
-                )
+    private fun applyRepeatingRequest(onTorchApplied: ((Boolean, Boolean) -> Unit)? = null) {
+        val camera = cameraDevice
+        val session = captureSession
+        val surface = inputSurface
+        val cameraId = selectedCameraId
+        if (camera == null || session == null || surface == null || cameraId == null) {
+            onTorchApplied?.invoke(torchAvailable, false)
+            return
+        }
+
+        val request = runCatching {
+            camera.createCaptureRequest(CameraDevice.TEMPLATE_RECORD).apply {
+                addTarget(surface)
+                set(CaptureRequest.CONTROL_MODE, CameraMetadata.CONTROL_MODE_AUTO)
+                set(CaptureRequest.CONTROL_AE_MODE, CaptureRequest.CONTROL_AE_MODE_ON)
+                set(CaptureRequest.CONTROL_AE_LOCK, false)
+                if (supportsContinuousVideoAf(cameraId)) {
+                    set(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_VIDEO)
+                }
+                bestFpsRange(cameraId)?.let { set(CaptureRequest.CONTROL_AE_TARGET_FPS_RANGE, it) }
+                if (torchAvailable) {
+                    set(
+                        CaptureRequest.FLASH_MODE,
+                        if (torchEnabled) CaptureRequest.FLASH_MODE_TORCH else CaptureRequest.FLASH_MODE_OFF
+                    )
+                }
+            }.build()
+        }.getOrElse {
+            torchEnabled = false
+            onTorchApplied?.invoke(torchAvailable, false)
+            return
+        }
+
+        var acknowledged = false
+        val callback = if (onTorchApplied == null) null else object : CameraCaptureSession.CaptureCallback() {
+            override fun onCaptureCompleted(
+                session: CameraCaptureSession,
+                request: CaptureRequest,
+                result: TotalCaptureResult
+            ) {
+                if (acknowledged) return
+                acknowledged = true
+                onTorchApplied(torchAvailable, torchEnabled)
             }
-        }.build()
-        runCatching { session.setRepeatingRequest(request, null, cameraHandler) }
+        }
+
+        runCatching {
+            session.setRepeatingRequest(request, callback, cameraHandler)
+        }.onFailure {
+            torchEnabled = false
+            onTorchApplied?.invoke(torchAvailable, false)
+        }
     }
 
-    fun setTorch(enabled: Boolean): Boolean {
+    private fun supportsContinuousVideoAf(cameraId: String): Boolean {
+        val modes = cameraManager.getCameraCharacteristics(cameraId)
+            .get(CameraCharacteristics.CONTROL_AF_AVAILABLE_MODES)
+            ?: return false
+        return modes.contains(CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_VIDEO)
+    }
+
+    private fun bestFpsRange(cameraId: String): Range<Int>? {
+        val ranges = cameraManager.getCameraCharacteristics(cameraId)
+            .get(CameraCharacteristics.CONTROL_AE_AVAILABLE_TARGET_FPS_RANGES)
+            ?: return null
+        return ranges.filter { it.upper >= 20 }.minByOrNull { it.upper }
+            ?: ranges.maxByOrNull { it.upper }
+    }
+
+    fun setTorch(enabled: Boolean, onState: (available: Boolean, enabled: Boolean) -> Unit) {
         if (!torchAvailable || !running.get()) {
             torchEnabled = false
-            return false
+            onState(torchAvailable, false)
+            return
         }
-        torchEnabled = enabled
-        cameraHandler?.post { applyRepeatingRequest() } ?: return false
-        return true
+        val handler = cameraHandler
+        if (handler == null) {
+            onState(torchAvailable, false)
+            return
+        }
+        handler.post {
+            torchEnabled = enabled
+            val session = captureSession
+            if (session == null || cameraDevice == null) {
+                torchEnabled = false
+                onState(torchAvailable, false)
+                return@post
+            }
+            // Some vendor Camera2 stacks cache flash settings for a configured session.
+            // Tear down and rebuild the capture session so the new torch state is part of
+            // the first repeating request for that session instead of an in-place update.
+            runCatching { session.stopRepeating() }
+            runCatching { session.abortCaptures() }
+            runCatching { session.close() }
+            captureSession = null
+            createCaptureSession(onState)
+        }
     }
 
     private fun drainEncoder(writer: StreamWriter) {
@@ -211,6 +309,7 @@ class VideoStreamer(
         cameraThread = null
         cameraHandler = null
         torchAvailable = false
+        selectedCameraId = null
     }
 
     private fun java.nio.ByteBuffer.toByteArray(): ByteArray {
