@@ -275,13 +275,18 @@ class BabyMonitorService : Service() {
             Protocol.TYPE_TORCH_COMMAND -> {
                 val requested = runCatching { Protocol.unpackTorchCommand(packet.payload) }.getOrNull() ?: return
                 val video = videoStreamer
-                val available = video?.setTorch(requested) == true
-                writer.packet(
-                    Protocol.TYPE_TORCH_STATE,
-                    0,
-                    0,
-                    Protocol.packTorchState(available, available && requested)
-                )
+                if (video == null) {
+                    writer.packet(Protocol.TYPE_TORCH_STATE, 0, 0, Protocol.packTorchState(false, false))
+                    return
+                }
+                video.setTorch(requested) { available, enabled ->
+                    writer.packet(
+                        Protocol.TYPE_TORCH_STATE,
+                        0,
+                        0,
+                        Protocol.packTorchState(available, enabled)
+                    )
+                }
             }
             Protocol.TYPE_NOISE_CONTROL -> {
                 val enabled = runCatching { Protocol.unpackNoiseControl(packet.payload) }.getOrNull() ?: return
