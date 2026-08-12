@@ -73,7 +73,6 @@
 
         <LinearLayout android:id="@+id/liveControls" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="10dp" android:orientation="horizontal">
             <Button android:id="@+id/audioButton" style="@style/Button.Secondary" android:layout_width="0dp" android:layout_height="50dp" android:layout_weight="1" android:layout_marginRight="4dp" android:text="Audio on" />
-            <Button android:id="@+id/torchButton" style="@style/Button.Secondary" android:layout_width="0dp" android:layout_height="50dp" android:layout_weight="1" android:layout_marginLeft="4dp" android:layout_marginRight="4dp" android:text="No torch" />
             <Button android:id="@+id/fullscreenButton" style="@style/Button.Secondary" android:layout_width="0dp" android:layout_height="50dp" android:layout_weight="1" android:layout_marginLeft="4dp" android:text="Fullscreen" />
         </LinearLayout>
 
