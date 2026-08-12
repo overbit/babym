@@ -21,7 +21,6 @@ class MonitorStreamClient(
     private val onStatus: (String) -> Unit,
     private val onVideoSize: (Int, Int) -> Unit,
     private val onStreaming: () -> Unit,
-    private val onTorchState: (available: Boolean, enabled: Boolean) -> Unit,
     private val onNoiseState: (enabled: Boolean) -> Unit,
     private val onNoiseAlert: (levelPercent: Int) -> Unit
 ) {
@@ -102,10 +101,6 @@ class MonitorStreamClient(
                     audioDecoder = AudioDecoder(context, muted).also { it.configure(config) }
                 }
                 Protocol.TYPE_AUDIO_FRAME -> audioDecoder?.decode(packet)
-                Protocol.TYPE_TORCH_STATE -> {
-                    val state = Protocol.unpackTorchState(packet.payload)
-                    onTorchState(state.available, state.enabled)
-                }
                 Protocol.TYPE_NOISE_STATE -> onNoiseState(Protocol.unpackNoiseState(packet.payload))
                 Protocol.TYPE_NOISE_ALERT -> onNoiseAlert(Protocol.unpackNoiseAlert(packet.payload))
             }
@@ -142,14 +137,6 @@ class MonitorStreamClient(
     fun setMuted(value: Boolean) {
         muted = value
         audioDecoder?.setMuted(value)
-    }
-
-    fun setTorch(enabled: Boolean): Boolean {
-        val stream = output ?: return false
-        return runCatching {
-            Protocol.writePacket(stream, Protocol.TYPE_TORCH_COMMAND, 0, 0, Protocol.packTorchCommand(enabled))
-            true
-        }.getOrElse { false }
     }
 
     fun setNoiseAlerts(enabled: Boolean): Boolean {
