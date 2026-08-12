@@ -34,3 +34,5 @@ Noise detection is a convenience feature, not a calibrated sound-pressure meter 
 - Video: H.264 via Android MediaCodec, target 720p / 20 FPS.
 - Audio: AAC microphone stream.
 - One Baby Camera to one Parent Monitor.
+
+The APK workflow builds this branch so hardware tests always use the exact PR source.
