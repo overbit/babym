@@ -240,8 +240,8 @@ class MonitorActivity : Activity() {
         torchButton.isEnabled = available
         torchButton.text = when {
             !available -> "No torch"
-            enabled -> "Torch on"
-            else -> "Torch off"
+            enabled -> "Turn torch off"
+            else -> "Turn torch on"
         }
     }
 
