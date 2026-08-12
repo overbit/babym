@@ -47,7 +47,6 @@ class MonitorActivity : Activity() {
     private lateinit var videoSurface: AspectRatioSurfaceView
     private lateinit var liveStatus: TextView
     private lateinit var liveTimer: TextView
-    private lateinit var torchButton: Button
     private lateinit var audioButton: Button
     private lateinit var noiseButton: Button
     private lateinit var noiseAlertBanner: TextView
@@ -61,15 +60,12 @@ class MonitorActivity : Activity() {
     private var client: MonitorStreamClient? = null
     private var currentHost: String? = null
     private var muted = false
-    private var torchAvailable = false
-    private var torchOn = false
     private var noiseAlertsEnabled = true
     private var fullscreen = false
     private var liveStartedAt = 0L
     private var notificationPermissionRequested = false
 
     private val hideNoiseAlert = Runnable { noiseAlertBanner.visibility = View.GONE }
-    private val torchAckTimeout = Runnable { updateTorch(torchAvailable, torchOn) }
     private val noiseAckTimeout = Runnable { updateNoiseAlertState(noiseAlertsEnabled) }
     private val timerTick = object : Runnable {
         override fun run() {
@@ -108,7 +104,6 @@ class MonitorActivity : Activity() {
         videoSurface = findViewById(R.id.videoSurface)
         liveStatus = findViewById(R.id.liveStatus)
         liveTimer = findViewById(R.id.liveTimer)
-        torchButton = findViewById(R.id.torchButton)
         audioButton = findViewById(R.id.audioButton)
         noiseButton = findViewById(R.id.noiseButton)
         noiseAlertBanner = findViewById(R.id.noiseAlertBanner)
@@ -130,16 +125,6 @@ class MonitorActivity : Activity() {
             muted = !muted
             client?.setMuted(muted)
             audioButton.text = if (muted) "Audio muted" else "Audio on"
-        }
-        torchButton.isEnabled = false
-        torchButton.setOnClickListener {
-            if (!torchAvailable) return@setOnClickListener
-            if (client?.setTorch(!torchOn) == true) {
-                torchButton.isEnabled = false
-                torchButton.text = "Updating torch…"
-                handler.removeCallbacks(torchAckTimeout)
-                handler.postDelayed(torchAckTimeout, 2_000)
-            }
         }
         noiseButton.isEnabled = false
         noiseButton.setOnClickListener {
@@ -209,7 +194,6 @@ class MonitorActivity : Activity() {
             onStatus = { runOnUiThread { liveStatus.text = it } },
             onVideoSize = { w, h -> runOnUiThread { videoSurface.setVideoSize(w, h) } },
             onStreaming = { runOnUiThread { showLive() } },
-            onTorchState = { available, enabled -> runOnUiThread { updateTorch(available, enabled) } },
             onNoiseState = { enabled -> runOnUiThread { updateNoiseAlertState(enabled) } },
             onNoiseAlert = { level -> runOnUiThread { showNoiseAlert(level) } }
         ).also {
@@ -231,18 +215,6 @@ class MonitorActivity : Activity() {
         handler.post(timerTick)
         requestNoiseNotificationPermissionIfNeeded()
         updateNoiseAlertState(noiseAlertsEnabled)
-    }
-
-    private fun updateTorch(available: Boolean, enabled: Boolean) {
-        handler.removeCallbacks(torchAckTimeout)
-        torchAvailable = available
-        torchOn = enabled
-        torchButton.isEnabled = available
-        torchButton.text = when {
-            !available -> "No torch"
-            enabled -> "Turn torch off"
-            else -> "Turn torch on"
-        }
     }
 
     private fun updateNoiseAlertState(enabled: Boolean) {
