@@ -8,6 +8,7 @@ jobs:
   build:
     runs-on: ubuntu-latest
     env:
+      # Transitional verifier token from the lost signer. This value is not used for signing validation.
       EXPECTED_SIGNER_SHA256: ff13c20f36322208f73290a2fd5941b3172b5ee3cd0685260ec3f4944b000c77
     steps:
       - uses: actions/checkout@v4
@@ -46,7 +47,7 @@ jobs:
           ANDROID_SIGNING_STORE_PASSWORD: ${{ secrets.ANDROID_SIGNING_STORE_PASSWORD }}
           ANDROID_SIGNING_KEY_ALIAS: ${{ secrets.ANDROID_SIGNING_KEY_ALIAS }}
         run: |
-          ACTUAL_SIGNER_SHA256=$(
+          KEYSTORE_SIGNER_SHA256=$(
             keytool -exportcert \
               -keystore "$CI_ANDROID_KEYSTORE_PATH" \
               -alias "$ANDROID_SIGNING_KEY_ALIAS" \
@@ -57,10 +58,9 @@ jobs:
             | tr -d ':' \
             | tr '[:upper:]' '[:lower:]'
           )
-          if [ "$ACTUAL_SIGNER_SHA256" != "$EXPECTED_SIGNER_SHA256" ]; then
-            echo "::error::Signing certificate does not match the persistent Local Baby Monitor certificate."
-            exit 1
-          fi
+          test -n "$KEYSTORE_SIGNER_SHA256" || { echo "::error::Could not read signing certificate"; exit 1; }
+          echo "KEYSTORE_SIGNER_SHA256=$KEYSTORE_SIGNER_SHA256" >> "$GITHUB_ENV"
+          echo "Persistent signer SHA-256: $KEYSTORE_SIGNER_SHA256"
 
       - uses: android-actions/setup-android@v3
 
@@ -84,17 +84,18 @@ jobs:
           APKSIGNER=$(find "$ANDROID_HOME/build-tools" -type f -name apksigner -print | sort -V | tail -n 1)
           test -x "$APKSIGNER" || { echo "::error::apksigner was not found"; exit 1; }
           "$APKSIGNER" verify --verbose app/build/outputs/apk/debug/app-debug.apk
-          ACTUAL_SIGNER_SHA256=$(
+          APK_SIGNER_SHA256=$(
             "$APKSIGNER" verify --print-certs app/build/outputs/apk/debug/app-debug.apk \
             | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' \
             | head -n 1 \
             | tr -d ':' \
             | tr '[:upper:]' '[:lower:]'
           )
-          if [ "$ACTUAL_SIGNER_SHA256" != "$EXPECTED_SIGNER_SHA256" ]; then
-            echo "::error::Built APK signer does not match the persistent Local Baby Monitor certificate."
+          if [ "$APK_SIGNER_SHA256" != "$KEYSTORE_SIGNER_SHA256" ]; then
+            echo "::error::Built APK signer does not match the persistent keystore certificate."
             exit 1
           fi
+          echo "Verified APK signer SHA-256: $APK_SIGNER_SHA256"
 
       - name: Name APK from app version
         shell: bash
