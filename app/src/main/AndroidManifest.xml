@@ -17,6 +17,7 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CAMERA" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />
 
     <uses-feature android:name="android.hardware.wifi.direct" android:required="true" />
     <uses-feature android:name="android.hardware.camera.any" android:required="false" />
@@ -46,6 +47,11 @@
             android:name=".BabyMonitorService"
             android:exported="false"
             android:foregroundServiceType="camera|microphone" />
+        <service
+            android:name=".ParentMonitorService"
+            android:exported="false"
+            android:foregroundServiceType="connectedDevice"
+            android:stopWithTask="true" />
     </application>
 
 </manifest>
