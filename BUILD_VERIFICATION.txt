@@ -1,20 +1,24 @@
-Local Baby Monitor v0.6.5 - build verification
+Local Baby Monitor v0.6.6 - build verification
 
 Expected verification for the current branch:
 - Kotlin sources compile successfully against Android API 36.
 - Android resources/layouts compile and link successfully.
-- minSdkVersion 26; targetSdkVersion 36; versionCode 13.
-- Remote flashlight control is completely removed from the app UI, protocol, client, service, Camera2 streaming code, and manifest permissions.
-- Baby video capture uses the uninterrupted recording request path with no flashlight-related session reconfiguration.
-- Noise detection reuses the existing AudioRecord PCM stream; no second recorder is opened.
-- Parent can remotely enable/disable noise detection and receives acknowledged state.
-- Noise events produce an in-app banner, alarm tone, vibration, and, when permission is granted, a local Android notification.
-- Android 13+ POST_NOTIFICATIONS permission is declared/requested only for system notifications.
+- minSdkVersion 26; targetSdkVersion 36; versionCode 14.
+- Parent Monitor includes a persistent alert-level slider from 16% to 100%.
+- Parent live monitoring starts a connectedDevice foreground service and holds a partial CPU wake lock while the monitor session is active.
+- Noise notifications use a new high-importance channel with sound, vibration, and lock-screen visibility.
+- Android 13+ POST_NOTIFICATIONS permission is declared/requested for system notifications.
+- Baby noise detection still reuses the existing AudioRecord PCM stream; no second recorder is opened.
+- Parent can remotely enable/disable Baby-side sustained-noise detection and receives acknowledged state.
+- Remote flashlight control remains completely removed from UI, protocol, client, service, Camera2 code, and manifest permissions.
+- Baby video capture remains on the uninterrupted recording request path.
 - Working v0.5.1 Wi-Fi Direct cleanup/PBC/listen-state path is carried forward.
 - Rotation-safe stream surface attach/detach remains present.
 - App-level PIN/code authentication remains absent.
-- GitHub Actions builds and uploads an installable debug APK on every push.
+- GitHub Actions verifies, builds, names, and uploads an installable debug APK on every push.
 
 Physical-device validation still required:
-- Noise threshold sensitivity in the intended room/device microphone environment.
-- Notification behavior with device-specific Do Not Disturb/battery policies.
+- Practical alert-level behavior across target-phone microphones.
+- Background alert delivery on target OEM firmware.
+- Notification behavior with channel settings, Do Not Disturb, and OEM battery policies.
+- Battery impact during long monitoring sessions.
