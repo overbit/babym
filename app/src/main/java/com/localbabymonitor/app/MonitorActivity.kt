@@ -11,7 +11,9 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Color
 import android.location.LocationManager
+import android.media.AudioAttributes
 import android.media.AudioManager
+import android.media.RingtoneManager
 import android.media.ToneGenerator
 import android.net.wifi.WifiManager
 import android.net.wifi.p2p.WifiP2pDevice
@@ -28,14 +30,20 @@ import android.view.SurfaceHolder
 import android.view.View
 import android.widget.Button
 import android.widget.LinearLayout
+import android.widget.SeekBar
 import android.widget.TextView
 
 class MonitorActivity : Activity() {
     companion object {
         private const val REQUEST_P2P_PERMISSION = 2001
         private const val REQUEST_NOTIFICATION_PERMISSION = 2002
-        private const val NOISE_CHANNEL_ID = "noise_alerts"
+        private const val NOISE_CHANNEL_ID = "noise_alerts_v2"
         private const val NOISE_NOTIFICATION_ID = 21
+        private const val PREFS = "monitor_preferences"
+        private const val PREF_NOISE_ALERT_LEVEL = "noise_alert_level"
+        private const val MIN_NOISE_ALERT_LEVEL = 16
+        private const val MAX_NOISE_ALERT_LEVEL = 100
+        private const val DEFAULT_NOISE_ALERT_LEVEL = 16
     }
 
     private lateinit var p2p: MonitorP2pController
@@ -52,6 +60,8 @@ class MonitorActivity : Activity() {
     private lateinit var noiseAlertBanner: TextView
     private lateinit var noiseAlertDetail: TextView
     private lateinit var noiseAlertExplanation: TextView
+    private lateinit var noiseThresholdLabel: TextView
+    private lateinit var noiseThresholdSeekBar: SeekBar
     private lateinit var liveHeader: View
     private lateinit var liveControls: View
     private lateinit var liveInfoCard: View
@@ -61,6 +71,7 @@ class MonitorActivity : Activity() {
     private var currentHost: String? = null
     private var muted = false
     private var noiseAlertsEnabled = true
+    private var noiseAlertLevel = DEFAULT_NOISE_ALERT_LEVEL
     private var fullscreen = false
     private var liveStartedAt = 0L
     private var notificationPermissionRequested = false
@@ -80,6 +91,9 @@ class MonitorActivity : Activity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_monitor)
         applySafeArea(findViewById(R.id.monitorRoot))
+        noiseAlertLevel = getSharedPreferences(PREFS, MODE_PRIVATE)
+            .getInt(PREF_NOISE_ALERT_LEVEL, DEFAULT_NOISE_ALERT_LEVEL)
+            .coerceIn(MIN_NOISE_ALERT_LEVEL, MAX_NOISE_ALERT_LEVEL)
         createNoiseNotificationChannel()
         bindViews()
         bindActions()
@@ -109,6 +123,8 @@ class MonitorActivity : Activity() {
         noiseAlertBanner = findViewById(R.id.noiseAlertBanner)
         noiseAlertDetail = findViewById(R.id.noiseAlertDetail)
         noiseAlertExplanation = findViewById(R.id.noiseAlertExplanation)
+        noiseThresholdLabel = findViewById(R.id.noiseThresholdLabel)
+        noiseThresholdSeekBar = findViewById(R.id.noiseThresholdSeekBar)
         liveHeader = findViewById(R.id.liveHeader)
         liveControls = findViewById(R.id.liveControls)
         liveInfoCard = findViewById(R.id.liveInfoCard)
@@ -136,6 +152,24 @@ class MonitorActivity : Activity() {
                 handler.postDelayed(noiseAckTimeout, 2_000)
             }
         }
+        noiseThresholdSeekBar.min = MIN_NOISE_ALERT_LEVEL
+        noiseThresholdSeekBar.max = MAX_NOISE_ALERT_LEVEL
+        noiseThresholdSeekBar.progress = noiseAlertLevel
+        noiseThresholdSeekBar.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
+                noiseAlertLevel = progress.coerceIn(MIN_NOISE_ALERT_LEVEL, MAX_NOISE_ALERT_LEVEL)
+                updateNoiseAlertState(noiseAlertsEnabled)
+            }
+
+            override fun onStartTrackingTouch(seekBar: SeekBar?) = Unit
+
+            override fun onStopTrackingTouch(seekBar: SeekBar?) {
+                getSharedPreferences(PREFS, MODE_PRIVATE)
+                    .edit()
+                    .putInt(PREF_NOISE_ALERT_LEVEL, noiseAlertLevel)
+                    .apply()
+            }
+        })
         findViewById<View>(R.id.videoFrame).setOnClickListener { if (fullscreen) toggleFullscreen() }
         videoSurface.holder.addCallback(object : SurfaceHolder.Callback {
             override fun surfaceCreated(holder: SurfaceHolder) { client?.attachSurface(holder.surface) }
@@ -188,6 +222,10 @@ class MonitorActivity : Activity() {
         if (!force && client?.isRunning == true && currentHost == host) return
         currentHost = host
         client?.stop()
+        startForegroundService(
+            Intent(this, ParentMonitorService::class.java)
+                .setAction(ParentMonitorService.ACTION_START)
+        )
         client = MonitorStreamClient(
             context = this,
             host = host,
@@ -222,47 +260,59 @@ class MonitorActivity : Activity() {
         noiseAlertsEnabled = enabled
         noiseButton.isEnabled = client?.isRunning == true
         noiseButton.text = if (enabled) "Turn noise alerts off" else "Turn noise alerts on"
+        noiseThresholdLabel.text = "Alert level · $noiseAlertLevel%"
         noiseAlertDetail.text = when {
             !enabled -> "Off · the baby phone is not checking sound level"
-            notificationsAllowed() -> "On · banner, sound, vibration and notification"
-            else -> "On · banner, sound and vibration"
+            notificationsAllowed() -> "On · level $noiseAlertLevel% · lock-screen notification ready"
+            else -> "On · level $noiseAlertLevel% · enable Android notifications for lock-screen alerts"
         }
         noiseAlertDetail.setTextColor(getColor(if (enabled) R.color.success else R.color.text_secondary))
         noiseAlertExplanation.text =
-            "How it works: audio is analysed locally on the baby phone. " +
-                "If sound stays above the trigger level for about 0.75 seconds, " +
-                "an alert is sent here. After an alert there is a 12-second cooldown. " +
-                "The percentage shown is a relative microphone level, not calibrated dB. " +
-                "Detection stays on this local connection; nothing is uploaded."
+            "How it works: the baby phone sends sustained-noise events over the local connection. " +
+                "The alert-level control filters those events on this parent phone; lower is more sensitive. " +
+                "Live monitoring uses a foreground service and wake lock so processing can continue when the screen is off. " +
+                "Android notification and Do Not Disturb settings still apply. The percentage is relative, not calibrated dB."
     }
 
     private fun showNoiseAlert(level: Int) {
-        if (!noiseAlertsEnabled) return
+        if (!noiseAlertsEnabled || level < noiseAlertLevel) return
         val title = if (level >= 70) "Loud noise detected" else "Noise detected"
         noiseAlertBanner.text = "$title · $level%"
         noiseAlertBanner.visibility = View.VISIBLE
         handler.removeCallbacks(hideNoiseAlert)
         handler.postDelayed(hideNoiseAlert, 4_000)
-        ToneGenerator(AudioManager.STREAM_ALARM, 75).also { tone ->
-            tone.startTone(ToneGenerator.TONE_PROP_BEEP2, 700)
-            handler.postDelayed({ runCatching { tone.release() } }, 900)
+
+        if (notificationsAllowed()) {
+            postNoiseNotification(title, level)
+        } else {
+            ToneGenerator(AudioManager.STREAM_ALARM, 75).also { tone ->
+                tone.startTone(ToneGenerator.TONE_PROP_BEEP2, 700)
+                handler.postDelayed({ runCatching { tone.release() } }, 900)
+            }
+            runCatching {
+                (getSystemService(Context.VIBRATOR_SERVICE) as Vibrator)
+                    .vibrate(VibrationEffect.createOneShot(450, VibrationEffect.DEFAULT_AMPLITUDE))
+            }
         }
-        runCatching {
-            (getSystemService(Context.VIBRATOR_SERVICE) as Vibrator)
-                .vibrate(VibrationEffect.createOneShot(450, VibrationEffect.DEFAULT_AMPLITUDE))
-        }
-        postNoiseNotification(title, level)
     }
 
     private fun createNoiseNotificationChannel() {
+        val sound = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM)
+            ?: RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)
+        val audioAttributes = AudioAttributes.Builder()
+            .setUsage(AudioAttributes.USAGE_ALARM)
+            .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+            .build()
         val channel = NotificationChannel(
             NOISE_CHANNEL_ID,
             "Noise alerts",
             NotificationManager.IMPORTANCE_HIGH
         ).apply {
-            description = "Alerts when sustained noise is detected by the baby phone"
-            setSound(null, null)
-            enableVibration(false)
+            description = "Urgent alerts when sustained noise is detected by the baby phone"
+            setSound(sound, audioAttributes)
+            enableVibration(true)
+            setVibrationPattern(longArrayOf(0, 300, 150, 500))
+            setLockscreenVisibility(Notification.VISIBILITY_PUBLIC)
         }
         getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
     }
@@ -273,8 +323,12 @@ class MonitorActivity : Activity() {
         requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), REQUEST_NOTIFICATION_PERMISSION)
     }
 
-    private fun notificationsAllowed(): Boolean =
-        Build.VERSION.SDK_INT < 33 || checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
+    private fun notificationsAllowed(): Boolean {
+        if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+            return false
+        }
+        return getSystemService(NotificationManager::class.java).areNotificationsEnabled()
+    }
 
     private fun postNoiseNotification(title: String, level: Int) {
         if (!notificationsAllowed()) return
@@ -292,6 +346,7 @@ class MonitorActivity : Activity() {
             .setContentText("Baby Camera detected sustained noise ($level%).")
             .setCategory(Notification.CATEGORY_ALARM)
             .setPriority(Notification.PRIORITY_HIGH)
+            .setVisibility(Notification.VISIBILITY_PUBLIC)
             .setAutoCancel(true)
             .setContentIntent(openIntent)
             .build()
@@ -342,6 +397,7 @@ class MonitorActivity : Activity() {
         handler.removeCallbacksAndMessages(null)
         client?.stop()
         client = null
+        stopService(Intent(this, ParentMonitorService::class.java))
         if (::p2p.isInitialized) p2p.stop()
         super.onDestroy()
     }
