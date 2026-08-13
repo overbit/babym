@@ -1,0 +1,59 @@
+name: Bug report
+description: Something isn't working
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        For connection problems, the details of **both** devices are the most
+        useful thing you can give — Wi-Fi Direct behaviour varies a lot by
+        manufacturer.
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What you expected, and what you got instead.
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Start camera mode on device A
+        2. ...
+    validations:
+      required: true
+
+  - type: input
+    id: camera-device
+    attributes:
+      label: Camera device
+      placeholder: e.g. Pixel 7a, Android 14
+    validations:
+      required: true
+
+  - type: input
+    id: viewer-device
+    attributes:
+      label: Viewer device
+      placeholder: e.g. Samsung Galaxy S21, Android 13
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: babym version
+      placeholder: e.g. v1.0.0, or a commit SHA if built from source
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs (optional)
+      description: Relevant `adb logcat` output. Please redact anything personal.
+      render: shell

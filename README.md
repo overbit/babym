@@ -1,50 +1,118 @@
-# Local Baby Monitor v0.5.0
+# babym
 
-A local-only Android baby monitor for two phones using Wi-Fi Direct. One phone runs **Baby Camera** and the other runs **Parent Monitor**. No account, cloud service, mobile data, or app-level pairing code is used.
+A peer-to-peer baby monitor for Android. Install it on two devices, point one at
+the cot, watch from the other. Video and audio travel directly between the two
+phones over Wi-Fi Direct — no router, no internet connection, no cloud, no
+account, no mobile data.
 
-## v0.5.0
+[![CI](https://github.com/overbit/babym/actions/workflows/ci.yml/badge.svg)](https://github.com/overbit/babym/actions/workflows/ci.yml)
+[![License](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
+[![Latest release](https://img.shields.io/github/v/release/overbit/babym)](https://github.com/overbit/babym/releases/latest)
 
-This release adds two monitoring features and fixes the parent rotation disconnect:
+<!-- TODO: add a screen recording or two screenshots here — camera view and viewer
+     view side by side. This is the single highest-value addition to this README. -->
 
-- **Remote torch:** the Parent Monitor can turn the Baby Camera phone's rear-camera torch on or off over the existing local stream socket. The control automatically disables when the selected camera does not expose a flash/torch.
-- **Noise alerts:** the Baby Camera reuses the existing microphone PCM stream to detect sustained loud sound locally. A noise event is sent to the Parent Monitor over Wi-Fi Direct, where it shows a visible alert and triggers a short alarm tone and vibration. Detection has a sustained-noise requirement and cooldown to avoid repeated alerts from brief transients.
-- **Rotation-safe monitoring:** rotating the Parent Monitor no longer tears down the socket/audio session. The video decoder detaches from the old `SurfaceView` and attaches to the replacement surface while the Wi-Fi Direct and TCP session stay alive.
+## Why this exists
 
-The existing v0.4.1 display behavior remains:
+Commercial baby monitors either use a proprietary radio you can't inspect, or
+they stream your nursery through a vendor's servers. This does neither. The two
+devices form a direct Wi-Fi Direct link and talk only to each other.
 
-- Aspect-fit live video with no stretching.
-- Status-bar, camera-cutout, and navigation-bar safe insets.
-- Portrait-first modern role, discovery, baby-camera, and live-monitor screens.
-- Audio mute, reconnect, and fullscreen controls.
+## What it does
 
-## Noise detection defaults
+- One device runs in **camera mode**: it captures video and audio and streams
+  them to the paired device.
+- The other runs in **viewer mode**: it displays the live video and plays the
+  audio.
+- Audio is **one-way only** (camera → viewer). There is no talk-back.
 
-Noise detection is deliberately simple and local. It computes RMS amplitude from the same 48 kHz mono PCM samples already being encoded for the parent audio stream. The default detector requires roughly 750 ms of sustained sound above the configured RMS threshold and applies a 12-second cooldown after an alert.
+## What it does not do
 
-This is a convenience alert, not a calibrated sound-pressure meter or medical/safety device.
+Being explicit about this, because a baby monitor you trust is one whose limits
+you know:
+
+- **No recording.** Nothing is written to disk; the stream is live only.
+- **No remote access.** Both devices must be within Wi-Fi Direct range of each
+  other (broadly, same-room to same-house, depending on hardware and walls).
+- **No talk-back**, no lullabies, no motion or cry detection, no notifications.
+- **Not a medical or safety device.** It will not alert you if it fails. Do not
+  use it as your only means of supervising an infant.
 
 ## Requirements
 
-- Android 8.0 / API 26 or newer.
-- Wi-Fi Direct support on both devices.
-- Wi-Fi enabled on both devices.
-- Location services enabled for Android's Wi-Fi Direct discovery flow.
-- Camera, microphone, and nearby-device permissions granted to the Baby Camera phone.
+- Two Android devices running **Android 13 (API 33) or later**
+- Both devices must support Wi-Fi Direct (Wi-Fi P2P) — most do
+- No SIM, data plan, or Wi-Fi network needed on either device
 
-## Use
+## Install
 
-1. Install the same build on both phones.
-2. On the phone near the baby, choose **Baby Camera** and tap **Start Monitoring**.
-3. On the parent phone, choose **Parent Monitor**, confirm Wi-Fi and Location show as ready, then tap **Scan Nearby Devices**.
-4. Select the baby phone and accept any Android Wi-Fi Direct system prompt.
-5. The app switches to the dedicated live monitor when the H.264 stream begins.
-6. Use **Torch** on the parent screen to control the baby phone's torch when available.
-7. Sustained noise on the baby phone produces a visible, audible, and vibration alert on the parent phone.
+Download the latest APK from the
+[Releases page](https://github.com/overbit/babym/releases/latest) and sideload it
+on both devices.
 
-## Notes
+**Verify what you're installing.** Every release includes a `SHA256SUMS` file.
+Before installing:
 
-- Runtime streaming uses local Java sockets over the Wi-Fi Direct link.
-- Video: H.264 via Android MediaCodec, target 720p / 20 FPS.
-- Audio: AAC microphone stream.
-- Torch commands and noise events use small packets on the same local TCP session.
-- One Baby Camera to one Parent Monitor.
+```sh
+sha256sum -c SHA256SUMS
+```
+
+Release APKs are signed with a stable key. Its SHA-256 certificate fingerprint is
+published in each release's notes and is identical across all releases — if it
+ever changes, that is worth asking about before you install. You can check the
+APK you downloaded with:
+
+```sh
+apksigner verify --print-certs babym-<version>.apk
+```
+
+## Permissions, and why each is needed
+
+| Permission | Why |
+| --- | --- |
+| `CAMERA` | Capture video in camera mode |
+| `RECORD_AUDIO` | Capture audio in camera mode |
+| `NEARBY_WIFI_DEVICES` | Discover and connect to the paired device over Wi-Fi Direct (Android 13+) |
+| `ACCESS_FINE_LOCATION` | Required by Android for Wi-Fi peer discovery on some devices. Location is never read, stored, or transmitted. |
+| `FOREGROUND_SERVICE` + `FOREGROUND_SERVICE_CAMERA` / `_MICROPHONE` | Keep the stream running while the screen is off |
+
+<!-- TODO: reconcile this table against the actual AndroidManifest.xml and delete
+     any row that isn't really requested. An over-declared permission table is
+     worse than none. -->
+
+`INTERNET` is not requested.
+
+## Privacy
+
+- No analytics, no telemetry, no crash reporting SDK, no third-party trackers.
+- No data leaves the direct link between the two paired devices.
+- Nothing is persisted beyond local pairing preferences on the device itself.
+
+## Build from source
+
+```sh
+git clone https://github.com/overbit/babym.git
+cd babym
+./gradlew assembleDebug
+```
+
+Requires JDK 17 and the Android SDK. The debug APK lands in
+`app/build/outputs/apk/debug/`.
+
+<!-- TODO: confirm the module name and output path, and note any local.properties
+     or SDK version requirements beyond the defaults. -->
+
+## Contributing
+
+PRs are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md). This is a
+single-maintainer project, so please open an issue before starting anything
+large.
+
+## Security
+
+Found a vulnerability? Please don't open a public issue — see
+[SECURITY.md](SECURITY.md).
+
+## License
+
+[Apache License 2.0](LICENSE).
