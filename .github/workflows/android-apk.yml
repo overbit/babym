@@ -88,7 +88,8 @@ jobs:
           printf '%s\n' "$CERTS"
           APK_SIGNER_SHA256=$(
             printf '%s\n' "$CERTS" \
-            | awk -F': ' '/Signer #1 certificate SHA-256 digest/ {print $2; exit}' \
+            | sed -n 's/^.*certificate SHA-256 digest: //p' \
+            | head -n 1 \
             | tr -d '[:space:]:' \
             | tr '[:upper:]' '[:lower:]'
           )
