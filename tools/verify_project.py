@@ -10,6 +10,7 @@ required = [
     "app/src/main/java/com/localbabymonitor/app/MainActivity.kt",
     "app/src/main/java/com/localbabymonitor/app/BabyActivity.kt",
     "app/src/main/java/com/localbabymonitor/app/BabyMonitorService.kt",
+    "app/src/main/java/com/localbabymonitor/app/ParentMonitorService.kt",
     "app/src/main/java/com/localbabymonitor/app/MonitorActivity.kt",
     "app/src/main/java/com/localbabymonitor/app/MonitorStreamClient.kt",
     "app/src/main/java/com/localbabymonitor/app/AudioStreamer.kt",
@@ -26,6 +27,8 @@ manifest = (root / "app/src/main/AndroidManifest.xml").read_text()
 for token in [
     "android.permission.VIBRATE",
     "android.permission.POST_NOTIFICATIONS",
+    "android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE",
+    "android:foregroundServiceType=\"connectedDevice\"",
     "configChanges=\"orientation|screenSize|smallestScreenSize|screenLayout|keyboardHidden\"",
 ]:
     if token not in manifest:
@@ -40,6 +43,11 @@ service = (root / "app/src/main/java/com/localbabymonitor/app/BabyMonitorService
 for token in ["handleControlPacket", "TYPE_NOISE_ALERT", "TYPE_NOISE_CONTROL", "DataInputStream"]:
     if token not in service:
         errors.append(f"baby service token missing: {token}")
+
+parent_service = (root / "app/src/main/java/com/localbabymonitor/app/ParentMonitorService.kt").read_text()
+for token in ["FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE", "PARTIAL_WAKE_LOCK", "startForeground", "Parent monitoring active"]:
+    if token not in parent_service:
+        errors.append(f"parent service token missing: {token}")
 
 video = (root / "app/src/main/java/com/localbabymonitor/app/VideoStreamer.kt").read_text()
 for token in ["TEMPLATE_RECORD", "setRepeatingRequest"]:
@@ -57,12 +65,26 @@ for token in ["fun attachSurface", "fun detachSurface", "fun setNoiseAlerts", "o
         errors.append(f"client token missing: {token}")
 
 monitor = (root / "app/src/main/java/com/localbabymonitor/app/MonitorActivity.kt").read_text()
-for token in ["noiseButton", "noiseAlertBanner", "attachSurface(holder.surface)", "detachSurface(holder.surface)", "showNoiseAlert"]:
+for token in [
+    "noiseButton",
+    "noiseAlertBanner",
+    "noiseThresholdSeekBar",
+    "PREF_NOISE_ALERT_LEVEL",
+    "noise_alerts_v2",
+    "IMPORTANCE_HIGH",
+    "setLockscreenVisibility(Notification.VISIBILITY_PUBLIC)",
+    "ParentMonitorService.ACTION_START",
+    "attachSurface(holder.surface)",
+    "detachSurface(holder.surface)",
+    "showNoiseAlert",
+]:
     if token not in monitor:
         errors.append(f"monitor token missing: {token}")
+if "setSound(null" in monitor:
+    errors.append("noise notification channel is still explicitly silent")
 
 layout = (root / "app/src/main/res/layout/activity_monitor.xml").read_text()
-for token in ["noiseButton", "noiseAlertBanner", "Noise alerts"]:
+for token in ["noiseButton", "noiseAlertBanner", "noiseThresholdSeekBar", "noiseThresholdLabel", "Noise alerts"]:
     if token not in layout:
         errors.append(f"layout token missing: {token}")
 
@@ -95,10 +117,10 @@ if not re.search(r"minSdk\s*=\s*26", build):
     errors.append("minSdk is not 26")
 if not re.search(r"targetSdk\s*=\s*36", build):
     errors.append("targetSdk is not 36")
-if not re.search(r"versionCode\s*=\s*13", build):
-    errors.append("versionCode is not 13")
-if 'versionName = "0.6.5"' not in build:
-    errors.append("versionName is not 0.6.5")
+if not re.search(r"versionCode\s*=\s*14", build):
+    errors.append("versionCode is not 14")
+if 'versionName = "0.6.6"' not in build:
+    errors.append("versionName is not 0.6.6")
 
 if errors:
     print("VERIFY FAILED")
@@ -107,4 +129,4 @@ if errors:
     sys.exit(1)
 
 print("VERIFY OK")
-print("v0.6.5 noise alerts, rotation-safe streaming, Wi-Fi Direct recovery, and complete remote torch removal verified.")
+print("v0.6.6 configurable parent alert level, screen-off foreground monitoring, stronger notifications, stable streaming, and torch removal verified.")
