@@ -18,6 +18,7 @@ required = [
     "app/src/main/java/com/localbabymonitor/app/Protocol.kt",
     "app/src/main/res/layout/activity_monitor.xml",
     "app/src/main/res/drawable/bg_noise_alert.xml",
+    ".github/workflows/android-apk.yml",
 ]
 for name in required:
     if not (root / name).is_file():
@@ -121,6 +122,35 @@ if not re.search(r"versionCode\s*=\s*14", build):
     errors.append("versionCode is not 14")
 if 'versionName = "0.6.6"' not in build:
     errors.append("versionName is not 0.6.6")
+for token in [
+    "CI_ANDROID_KEYSTORE_PATH",
+    'create("ci")',
+    'signingConfig = signingConfigs.getByName("ci")',
+    "ANDROID_SIGNING_STORE_PASSWORD",
+    "ANDROID_SIGNING_KEY_ALIAS",
+    "ANDROID_SIGNING_KEY_PASSWORD",
+]:
+    if token not in build:
+        errors.append(f"persistent signing build token missing: {token}")
+
+workflow = (root / ".github/workflows/android-apk.yml").read_text()
+for token in [
+    "ANDROID_SIGNING_KEYSTORE_BASE64",
+    "ANDROID_SIGNING_STORE_PASSWORD",
+    "ANDROID_SIGNING_KEY_ALIAS",
+    "ANDROID_SIGNING_KEY_PASSWORD",
+    "EXPECTED_SIGNER_SHA256",
+    "ff13c20f36322208f73290a2fd5941b3172b5ee3cd0685260ec3f4944b000c77",
+    "Verify signing certificate",
+    "Build persistently signed debug APK",
+    "Verify APK signing certificate",
+    "apksigner",
+    "actions/upload-artifact@v4",
+]:
+    if token not in workflow:
+        errors.append(f"persistent signing workflow token missing: {token}")
+if "assembleDebug" not in workflow:
+    errors.append("workflow no longer builds the debug APK")
 
 if errors:
     print("VERIFY FAILED")
@@ -129,4 +159,4 @@ if errors:
     sys.exit(1)
 
 print("VERIFY OK")
-print("v0.6.6 configurable parent alert level, screen-off foreground monitoring, stronger notifications, stable streaming, and torch removal verified.")
+print("v0.6.6 configurable noise alerts, screen-off monitoring, stable streaming, torch removal, and persistent APK signing verified.")
