@@ -7,6 +7,8 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    env:
+      EXPECTED_SIGNER_SHA256: ff13c20f36322208f73290a2fd5941b3172b5ee3cd0685260ec3f4944b000c77
     steps:
       - uses: actions/checkout@v4
 
@@ -14,6 +16,51 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
+
+      - name: Require persistent signing secrets
+        shell: bash
+        env:
+          KEYSTORE_B64: ${{ secrets.ANDROID_SIGNING_KEYSTORE_BASE64 }}
+          STORE_PASSWORD: ${{ secrets.ANDROID_SIGNING_STORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_SIGNING_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_SIGNING_KEY_PASSWORD }}
+        run: |
+          test -n "$KEYSTORE_B64" || { echo "::error::Missing ANDROID_SIGNING_KEYSTORE_BASE64"; exit 1; }
+          test -n "$STORE_PASSWORD" || { echo "::error::Missing ANDROID_SIGNING_STORE_PASSWORD"; exit 1; }
+          test -n "$KEY_ALIAS" || { echo "::error::Missing ANDROID_SIGNING_KEY_ALIAS"; exit 1; }
+          test -n "$KEY_PASSWORD" || { echo "::error::Missing ANDROID_SIGNING_KEY_PASSWORD"; exit 1; }
+
+      - name: Restore persistent signing key
+        shell: bash
+        env:
+          KEYSTORE_B64: ${{ secrets.ANDROID_SIGNING_KEYSTORE_BASE64 }}
+        run: |
+          KEYSTORE_PATH="$RUNNER_TEMP/local-baby-monitor-signing.jks"
+          printf '%s' "$KEYSTORE_B64" | base64 --decode > "$KEYSTORE_PATH"
+          chmod 600 "$KEYSTORE_PATH"
+          echo "CI_ANDROID_KEYSTORE_PATH=$KEYSTORE_PATH" >> "$GITHUB_ENV"
+
+      - name: Verify signing certificate
+        shell: bash
+        env:
+          ANDROID_SIGNING_STORE_PASSWORD: ${{ secrets.ANDROID_SIGNING_STORE_PASSWORD }}
+          ANDROID_SIGNING_KEY_ALIAS: ${{ secrets.ANDROID_SIGNING_KEY_ALIAS }}
+        run: |
+          ACTUAL_SIGNER_SHA256=$(
+            keytool -exportcert \
+              -keystore "$CI_ANDROID_KEYSTORE_PATH" \
+              -alias "$ANDROID_SIGNING_KEY_ALIAS" \
+              -storepass "$ANDROID_SIGNING_STORE_PASSWORD" \
+              -rfc \
+            | openssl x509 -noout -fingerprint -sha256 \
+            | cut -d= -f2 \
+            | tr -d ':' \
+            | tr '[:upper:]' '[:lower:]'
+          )
+          if [ "$ACTUAL_SIGNER_SHA256" != "$EXPECTED_SIGNER_SHA256" ]; then
+            echo "::error::Signing certificate does not match the persistent Local Baby Monitor certificate."
+            exit 1
+          fi
 
       - uses: android-actions/setup-android@v3
 
@@ -24,8 +71,30 @@ jobs:
       - name: Verify project invariants
         run: python3 tools/verify_project.py
 
-      - name: Build debug APK
+      - name: Build persistently signed debug APK
+        env:
+          ANDROID_SIGNING_STORE_PASSWORD: ${{ secrets.ANDROID_SIGNING_STORE_PASSWORD }}
+          ANDROID_SIGNING_KEY_ALIAS: ${{ secrets.ANDROID_SIGNING_KEY_ALIAS }}
+          ANDROID_SIGNING_KEY_PASSWORD: ${{ secrets.ANDROID_SIGNING_KEY_PASSWORD }}
         run: gradle :app:assembleDebug --stacktrace
+
+      - name: Verify APK signing certificate
+        shell: bash
+        run: |
+          APKSIGNER=$(find "$ANDROID_HOME/build-tools" -type f -name apksigner -print | sort -V | tail -n 1)
+          test -x "$APKSIGNER" || { echo "::error::apksigner was not found"; exit 1; }
+          "$APKSIGNER" verify --verbose app/build/outputs/apk/debug/app-debug.apk
+          ACTUAL_SIGNER_SHA256=$(
+            "$APKSIGNER" verify --print-certs app/build/outputs/apk/debug/app-debug.apk \
+            | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' \
+            | head -n 1 \
+            | tr -d ':' \
+            | tr '[:upper:]' '[:lower:]'
+          )
+          if [ "$ACTUAL_SIGNER_SHA256" != "$EXPECTED_SIGNER_SHA256" ]; then
+            echo "::error::Built APK signer does not match the persistent Local Baby Monitor certificate."
+            exit 1
+          fi
 
       - name: Name APK from app version
         shell: bash
@@ -42,3 +111,11 @@ jobs:
           name: LocalBabyMonitor-${{ github.sha }}
           path: ${{ env.APK_NAME }}
           if-no-files-found: error
+
+      - name: Remove signing key
+        if: always()
+        shell: bash
+        run: |
+          if [ -n "${CI_ANDROID_KEYSTORE_PATH:-}" ]; then
+            rm -f "$CI_ANDROID_KEYSTORE_PATH"
+          fi
