@@ -1,13 +1,14 @@
-# Local Baby Monitor v0.6.5
+# Local Baby Monitor v0.6.6
 
 A local-only Android baby monitor for two phones using Wi-Fi Direct. One phone runs **Baby Camera** and the other runs **Parent Monitor**. No account, cloud service, mobile data, or app-level pairing code is used.
 
-## v0.6.5
+## v0.6.6
 
-- **Remote flashlight control removed:** device testing showed that remote torch control was not reliable across the target Camera2 hardware. All parent torch UI, socket commands, protocol messages, Camera2 flash changes, and flashlight permission have been removed.
-- **Stable video path restored:** the Baby Camera uses the normal continuous `TEMPLATE_RECORD` capture request without flashlight-related session or request changes.
-- **Noise alerts:** Baby Camera analyzes the same PCM microphone samples already used for AAC streaming. Parent Monitor has an explicit noise-alert on/off control and explains that sustained loud sound for about 0.75 seconds triggers an alert followed by a 12-second cooldown.
-- **Parent alerts:** noise events show an in-app banner, alarm tone and vibration. Android notifications are also available when permission is granted.
+- **Configurable alert level:** Parent Monitor now has a persistent alert-level slider from 16% to 100%. Lower values accept more sustained-noise events; higher values notify only for stronger events. The percentage is a relative microphone level, not calibrated dB.
+- **Screen-off monitoring:** while Parent Monitor is connected, a `connectedDevice` foreground service keeps monitoring user-visible and holds a partial CPU wake lock so the local session can continue processing when the screen is locked/off.
+- **Stronger notifications:** noise alerts use a new high-importance Android notification channel with alarm sound, vibration, and public lock-screen visibility. Android notification permission, channel settings, Do Not Disturb, and OEM battery policies still apply.
+- **Noise alerts on/off:** Parent Monitor keeps the explicit noise-alert enable/disable control. Baby Camera still analyzes the same PCM microphone stream already used for AAC and reports sustained-noise events after about 0.75 seconds, with a 12-second cooldown.
+- **Remote flashlight control remains removed:** the stable video path keeps the normal continuous `TEMPLATE_RECORD` capture request with no flashlight/session changes.
 - **Connection reliability:** retains the physically tested v0.5.1 Wi-Fi Direct cleanup/PBC connection path and API 33+ baby listen-state improvement.
 - **Rotation-safe monitoring:** rotating Parent Monitor keeps the local socket/audio session alive and reattaches only the video surface.
 
@@ -20,14 +21,14 @@ Noise detection is a convenience feature, not a calibrated sound-pressure meter 
 - Location services enabled for Android Wi-Fi Direct discovery.
 - Camera and microphone permission on the Baby Camera phone.
 - Nearby Wi-Fi permission on Android 13+.
-- Notification permission on Android 13+ if system noise notifications are desired.
+- Notification permission on Android 13+ for lock-screen/system noise notifications.
 
 ## Use
 
 1. Install the same APK on both phones.
 2. On the phone near the baby, choose **Baby Camera** and tap **Start Monitoring**.
 3. On the parent phone, choose **Parent Monitor**, scan, and connect.
-4. In the live monitor, use **Noise alerts** to enable or disable local sound detection.
+4. In the live monitor, enable **Noise alerts** and set **Alert level**. Keep the live monitor session connected; the foreground-monitoring notification indicates that screen-off monitoring is active.
 
 ## Runtime
 
