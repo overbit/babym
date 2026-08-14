@@ -42,6 +42,9 @@ jobs:
       - name: Unit tests
         run: gradle --no-daemon :app:testDebugUnitTest --stacktrace
 
+      - name: Generate initial Android Lint baseline
+        run: gradle --no-daemon :app:updateLintBaseline --stacktrace
+
       - name: Android Lint
         run: gradle --no-daemon :app:lintDebug --stacktrace
 
@@ -51,6 +54,7 @@ jobs:
         with:
           name: reports
           path: |
+            app/lint-baseline.xml
             **/build/reports/tests/
             **/build/reports/lint-results-*.html
           if-no-files-found: ignore
