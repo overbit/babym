@@ -1,0 +1,31 @@
+name: Feature request
+description: Suggest an improvement
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please check the scope section in
+        [CONTRIBUTING.md](https://github.com/overbit/babym/blob/main/CONTRIBUTING.md)
+        first — cloud features, recording, analytics, and safety alerting are
+        out of scope by design.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem does this solve?
+      description: Describe the situation, not the solution.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
