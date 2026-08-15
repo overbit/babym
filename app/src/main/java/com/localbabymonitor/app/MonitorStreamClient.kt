@@ -29,7 +29,8 @@ class MonitorStreamClient(
     private val decoderLock = Any()
     private var thread: Thread? = null
     private var socket: Socket? = null
-    private var output: DataOutputStream? = null
+    // Written on the stream thread, read from the UI thread by the torch and noise controls.
+    @Volatile private var output: DataOutputStream? = null
     private var videoDecoder: VideoDecoder? = null
     private var audioDecoder: AudioDecoder? = null
     private var lastVideoConfig: Protocol.VideoConfig? = null
