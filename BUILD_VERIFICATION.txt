@@ -4,6 +4,12 @@ Expected verification for the current branch:
 - Kotlin sources compile successfully against Android API 36.
 - Android resources/layouts compile and link successfully.
 - minSdkVersion 26; targetSdkVersion 36; versionCode 16.
+- Parent Monitor's live screen is video-first: the picture is edge-to-edge and takes all space not
+  used by the header and the control row, and the zoom/light/noise/connection panel is collapsed
+  behind a Controls button instead of permanently sharing the screen with the video.
+- Tapping the picture enters and leaves fullscreen, which also rotates to landscape so a 16:9 stream
+  fills the screen, and holds FLAG_KEEP_SCREEN_ON only while fullscreen. Screen-off monitoring via
+  the foreground service is unchanged.
 - Parent Monitor includes a persistent alert-level slider from 16% to 100%.
 - Parent live monitoring starts a connectedDevice foreground service and holds a partial CPU wake lock while the monitor session is active.
 - Noise notifications use a new high-importance channel with sound, vibration, and lock-screen visibility.

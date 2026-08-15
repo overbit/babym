@@ -130,6 +130,8 @@ for token in [
     "updateTorchState",
     "zoomSeekBar",
     "updateZoomState",
+    "controlsButton",
+    "SCREEN_ORIENTATION_SENSOR_LANDSCAPE",
 ]:
     if token not in monitor:
         errors.append(f"monitor token missing: {token}")
@@ -147,6 +149,8 @@ for token in [
     "torchDetail",
     "zoomSeekBar",
     "zoomDetail",
+    "controlsButton",
+    "fullscreenHint",
 ]:
     if token not in layout:
         errors.append(f"layout token missing: {token}")

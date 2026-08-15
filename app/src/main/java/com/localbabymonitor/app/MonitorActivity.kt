@@ -8,6 +8,7 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import android.content.pm.ActivityInfo
 import android.content.pm.PackageManager
 import android.graphics.Color
 import android.location.LocationManager
@@ -28,6 +29,7 @@ import android.provider.Settings
 import android.view.LayoutInflater
 import android.view.SurfaceHolder
 import android.view.View
+import android.view.WindowManager
 import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.SeekBar
@@ -73,6 +75,8 @@ class MonitorActivity : Activity() {
     private lateinit var liveHeader: View
     private lateinit var liveControls: View
     private lateinit var liveInfoCard: View
+    private lateinit var controlsButton: Button
+    private lateinit var fullscreenHint: View
 
     private val handler = Handler(Looper.getMainLooper())
     private var client: MonitorStreamClient? = null
@@ -86,6 +90,7 @@ class MonitorActivity : Activity() {
     private var lastZoomSentAt = 0L
     private var noiseAlertLevel = DEFAULT_NOISE_ALERT_LEVEL
     private var fullscreen = false
+    private var controlsExpanded = false
     private var liveStartedAt = 0L
     private var notificationPermissionRequested = false
 
@@ -151,6 +156,8 @@ class MonitorActivity : Activity() {
         liveHeader = findViewById(R.id.liveHeader)
         liveControls = findViewById(R.id.liveControls)
         liveInfoCard = findViewById(R.id.liveInfoCard)
+        controlsButton = findViewById(R.id.controlsButton)
+        fullscreenHint = findViewById(R.id.fullscreenHint)
     }
 
     private fun bindActions() {
@@ -235,7 +242,14 @@ class MonitorActivity : Activity() {
                     .apply()
             }
         })
-        findViewById<View>(R.id.videoFrame).setOnClickListener { if (fullscreen) toggleFullscreen() }
+        // Tapping the picture is the gesture people already expect from a video player, and it is
+        // the only one available once fullscreen has hidden the buttons.
+        findViewById<View>(R.id.videoFrame).setOnClickListener { toggleFullscreen() }
+        controlsButton.setOnClickListener {
+            controlsExpanded = !controlsExpanded
+            applyControlsPanel()
+        }
+        applyControlsPanel()
         videoSurface.holder.addCallback(object : SurfaceHolder.Callback {
             override fun surfaceCreated(holder: SurfaceHolder) { client?.attachSurface(holder.surface) }
             override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) = Unit
@@ -514,12 +528,34 @@ class MonitorActivity : Activity() {
         getSystemService(NotificationManager::class.java).notify(NOISE_NOTIFICATION_ID, notification)
     }
 
+    /** The settings panel shares the screen with the video, so it stays shut until it is asked for. */
+    private fun applyControlsPanel() {
+        liveInfoCard.visibility = if (!fullscreen && controlsExpanded) View.VISIBLE else View.GONE
+        controlsButton.text = if (controlsExpanded) "Hide controls" else "Controls"
+    }
+
     private fun toggleFullscreen() {
         fullscreen = !fullscreen
+        // Opening the panel and going fullscreen are competing requests for the same space.
+        if (fullscreen) controlsExpanded = false
         liveHeader.visibility = if (fullscreen) View.GONE else View.VISIBLE
         liveControls.visibility = if (fullscreen) View.GONE else View.VISIBLE
-        liveInfoCard.visibility = if (fullscreen) View.GONE else View.VISIBLE
+        fullscreenHint.visibility = if (fullscreen) View.GONE else View.VISIBLE
+        applyControlsPanel()
         liveScreen.setBackgroundColor(if (fullscreen) Color.BLACK else getColor(R.color.app_bg))
+        // A 16:9 stream can only ever cover about a third of a portrait phone. Turning the screen
+        // landscape is what actually makes the picture big, so fullscreen does both together.
+        requestedOrientation = if (fullscreen) {
+            ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+        } else {
+            ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+        }
+        // Only while deliberately watching: screen-off monitoring is the normal mode and still works.
+        if (fullscreen) {
+            window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        } else {
+            window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        }
         @Suppress("DEPRECATION")
         window.decorView.systemUiVisibility = if (fullscreen) {
             View.SYSTEM_UI_FLAG_FULLSCREEN or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
