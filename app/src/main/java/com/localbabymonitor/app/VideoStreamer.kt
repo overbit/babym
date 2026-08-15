@@ -32,20 +32,12 @@ class VideoStreamer(
     private var codecThread: Thread? = null
     private var inputSurface: Surface? = null
     private var selectedSize = Size(1280, 720)
-    @Volatile private var torchAvailable = false
-    @Volatile private var torchEnabled = false
-
-    val isTorchAvailable: Boolean get() = torchAvailable
-    val isTorchEnabled: Boolean get() = torchEnabled
 
     @SuppressLint("MissingPermission")
     fun start(writer: StreamWriter) {
         if (running.getAndSet(true)) return
         try {
             val cameraId = chooseCameraId()
-            val characteristics = cameraManager.getCameraCharacteristics(cameraId)
-            torchAvailable = characteristics.get(CameraCharacteristics.FLASH_INFO_AVAILABLE) == true
-            torchEnabled = false
             selectedSize = chooseVideoSize(cameraId)
             setupCodec(writer)
 
@@ -137,24 +129,8 @@ class VideoStreamer(
         val request = camera.createCaptureRequest(CameraDevice.TEMPLATE_RECORD).apply {
             addTarget(surface)
             set(CaptureRequest.CONTROL_MODE, CaptureRequest.CONTROL_MODE_AUTO)
-            if (torchAvailable) {
-                set(
-                    CaptureRequest.FLASH_MODE,
-                    if (torchEnabled) CaptureRequest.FLASH_MODE_TORCH else CaptureRequest.FLASH_MODE_OFF
-                )
-            }
         }.build()
         runCatching { session.setRepeatingRequest(request, null, cameraHandler) }
-    }
-
-    fun setTorch(enabled: Boolean): Boolean {
-        if (!torchAvailable || !running.get()) {
-            torchEnabled = false
-            return false
-        }
-        torchEnabled = enabled
-        cameraHandler?.post { applyRepeatingRequest() }
-        return true
     }
 
     private fun drainEncoder(writer: StreamWriter) {
@@ -191,7 +167,6 @@ class VideoStreamer(
 
     fun stop() {
         if (!running.getAndSet(false)) return
-        torchEnabled = false
         runCatching { captureSession?.stopRepeating() }
         runCatching { captureSession?.close() }
         captureSession = null
@@ -208,7 +183,6 @@ class VideoStreamer(
         runCatching { cameraThread?.join(500) }
         cameraThread = null
         cameraHandler = null
-        torchAvailable = false
     }
 
     private fun java.nio.ByteBuffer.toByteArray(): ByteArray {

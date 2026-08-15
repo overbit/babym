@@ -1,19 +1,24 @@
-Local Baby Monitor v0.5.0 - build verification
+Local Baby Monitor v0.6.6 - build verification
 
-Verified in the build environment on 2026-08-11:
-- Kotlin application sources compile successfully against Android API 36.
-- Android resources/layouts compile and link successfully with aapt2.
-- minSdkVersion 26; targetSdkVersion 36.
-- Protocol v2 packet smoke tests include torch command/state and noise-alert payloads.
-- Parent video surface can detach/reattach without stopping MonitorStreamClient.
-- MonitorActivity handles orientation/screen-size configuration changes without Activity recreation.
-- Remote torch is routed from Parent Monitor to BabyMonitorService over the existing socket.
-- Torch availability/state is returned to the parent and unsupported cameras disable the control.
-- Noise detection reuses AudioStreamer PCM samples and sends only a small local alert event.
+Expected verification for the current branch:
+- Kotlin sources compile successfully against Android API 36.
+- Android resources/layouts compile and link successfully.
+- minSdkVersion 26; targetSdkVersion 36; versionCode 14.
+- Parent Monitor includes a persistent alert-level slider from 16% to 100%.
+- Parent live monitoring starts a connectedDevice foreground service and holds a partial CPU wake lock while the monitor session is active.
+- Noise notifications use a new high-importance channel with sound, vibration, and lock-screen visibility.
+- Android 13+ POST_NOTIFICATIONS permission is declared/requested for system notifications.
+- Baby noise detection still reuses the existing AudioRecord PCM stream; no second recorder is opened.
+- Parent can remotely enable/disable Baby-side sustained-noise detection and receives acknowledged state.
+- Remote flashlight control remains completely removed from UI, protocol, client, service, Camera2 code, and manifest permissions.
+- Baby video capture remains on the uninterrupted recording request path.
+- Working v0.5.1 Wi-Fi Direct cleanup/PBC/listen-state path is carried forward.
+- Rotation-safe stream surface attach/detach remains present.
 - App-level PIN/code authentication remains absent.
+- GitHub Actions verifies, builds, names, and uploads an installable debug APK on every push.
 
-Not verified here because two physical Android phones are unavailable:
-- Real Wi-Fi Direct interoperability on the target OEM devices.
-- Torch behavior on the target baby phone camera hardware.
-- Noise sensitivity in the target room/device microphone environment.
-- Rotation behavior on the exact parent device/OEM build.
+Physical-device validation still required:
+- Practical alert-level behavior across target-phone microphones.
+- Background alert delivery on target OEM firmware.
+- Notification behavior with channel settings, Do Not Disturb, and OEM battery policies.
+- Battery impact during long monitoring sessions.

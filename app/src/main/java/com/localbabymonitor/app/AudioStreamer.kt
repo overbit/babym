@@ -24,6 +24,7 @@ class AudioStreamer(
     private var codec: MediaCodec? = null
     private var loudDurationMs = 0L
     private var lastNoiseAlertAtMs = 0L
+    @Volatile private var noiseAlertsEnabled = true
 
     fun start(writer: StreamWriter) {
         if (running.getAndSet(true)) return
@@ -102,6 +103,10 @@ class AudioStreamer(
 
     private fun detectNoise(samples: ShortArray, count: Int, sampleRate: Int) {
         if (count <= 0) return
+        if (!noiseAlertsEnabled) {
+            loudDurationMs = 0L
+            return
+        }
         var sumSquares = 0.0
         for (i in 0 until count) {
             val normalized = samples[i] / 32768.0
@@ -156,6 +161,11 @@ class AudioStreamer(
                 } else return
             }
         }
+    }
+
+    fun setNoiseAlertsEnabled(enabled: Boolean) {
+        noiseAlertsEnabled = enabled
+        if (!enabled) loudDurationMs = 0L
     }
 
     fun stop() {

@@ -73,14 +73,19 @@
 
         <LinearLayout android:id="@+id/liveControls" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="10dp" android:orientation="horizontal">
             <Button android:id="@+id/audioButton" style="@style/Button.Secondary" android:layout_width="0dp" android:layout_height="50dp" android:layout_weight="1" android:layout_marginRight="4dp" android:text="Audio on" />
-            <Button android:id="@+id/torchButton" style="@style/Button.Secondary" android:layout_width="0dp" android:layout_height="50dp" android:layout_weight="1" android:layout_marginLeft="4dp" android:layout_marginRight="4dp" android:text="No torch" />
             <Button android:id="@+id/fullscreenButton" style="@style/Button.Secondary" android:layout_width="0dp" android:layout_height="50dp" android:layout_weight="1" android:layout_marginLeft="4dp" android:text="Fullscreen" />
         </LinearLayout>
 
         <LinearLayout android:id="@+id/liveInfoCard" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="10dp" android:background="@drawable/bg_card" android:orientation="vertical" android:padding="14dp">
-            <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="Connection · Wi‑Fi Direct" android:textColor="@color/text_primary" android:textSize="14sp" android:textStyle="bold" />
-            <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="4dp" android:text="Noise alerts · Enabled locally on the baby phone" android:textColor="@color/text_secondary" android:textSize="12sp" />
-            <Button android:id="@+id/reconnectButton" style="@style/Button.Secondary" android:layout_width="match_parent" android:layout_height="44dp" android:layout_marginTop="10dp" android:text="Reconnect stream" />
+            <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="Noise alerts" android:textColor="@color/text_primary" android:textSize="16sp" android:textStyle="bold" />
+            <TextView android:id="@+id/noiseAlertDetail" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="4dp" android:text="On · lock-screen notifications" android:textColor="@color/success" android:textSize="13sp" android:textStyle="bold" />
+            <TextView android:id="@+id/noiseThresholdLabel" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="10dp" android:text="Alert level · 16%" android:textColor="@color/text_primary" android:textSize="13sp" android:textStyle="bold" />
+            <SeekBar android:id="@+id/noiseThresholdSeekBar" android:layout_width="match_parent" android:layout_height="wrap_content" android:min="16" android:max="100" android:progress="16" />
+            <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="Lower = more sensitive. Higher = only stronger sustained sounds." android:textColor="@color/text_secondary" android:textSize="11sp" />
+            <TextView android:id="@+id/noiseAlertExplanation" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="8dp" android:text="How it works: sustained sound events are received over the local Wi‑Fi Direct connection. Your selected level decides which events alert the parent phone." android:textColor="@color/text_secondary" android:textSize="12sp" android:lineSpacingExtra="2dp" />
+            <Button android:id="@+id/noiseButton" style="@style/Button.Secondary" android:layout_width="match_parent" android:layout_height="48dp" android:layout_marginTop="12dp" android:text="Turn noise alerts off" />
+            <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="14dp" android:text="Connection · Wi‑Fi Direct" android:textColor="@color/text_primary" android:textSize="14sp" android:textStyle="bold" />
+            <Button android:id="@+id/reconnectButton" style="@style/Button.Secondary" android:layout_width="match_parent" android:layout_height="44dp" android:layout_marginTop="8dp" android:text="Reconnect stream" />
         </LinearLayout>
     </LinearLayout>
 </FrameLayout>
