@@ -57,6 +57,8 @@ class MonitorActivity : Activity() {
     private lateinit var liveTimer: TextView
     private lateinit var audioButton: Button
     private lateinit var noiseButton: Button
+    private lateinit var torchButton: Button
+    private lateinit var torchDetail: TextView
     private lateinit var noiseAlertBanner: TextView
     private lateinit var noiseAlertDetail: TextView
     private lateinit var noiseAlertExplanation: TextView
@@ -71,6 +73,8 @@ class MonitorActivity : Activity() {
     private var currentHost: String? = null
     private var muted = false
     private var noiseAlertsEnabled = true
+    private var torchState: Protocol.TorchState? = null
+    private var pendingTorch: Boolean? = null
     private var noiseAlertLevel = DEFAULT_NOISE_ALERT_LEVEL
     private var fullscreen = false
     private var liveStartedAt = 0L
@@ -78,6 +82,10 @@ class MonitorActivity : Activity() {
 
     private val hideNoiseAlert = Runnable { noiseAlertBanner.visibility = View.GONE }
     private val noiseAckTimeout = Runnable { updateNoiseAlertState(noiseAlertsEnabled) }
+    private val torchAckTimeout = Runnable {
+        pendingTorch = null
+        renderTorch("No answer from the baby phone · tap to try again")
+    }
     private val timerTick = object : Runnable {
         override fun run() {
             if (liveStartedAt == 0L || liveScreen.visibility != View.VISIBLE) return
@@ -107,6 +115,7 @@ class MonitorActivity : Activity() {
         ).also { it.start() }
         updateReadiness()
         updateNoiseAlertState(noiseAlertsEnabled)
+        updateTorchState(null)
     }
 
     private fun bindViews() {
@@ -120,6 +129,8 @@ class MonitorActivity : Activity() {
         liveTimer = findViewById(R.id.liveTimer)
         audioButton = findViewById(R.id.audioButton)
         noiseButton = findViewById(R.id.noiseButton)
+        torchButton = findViewById(R.id.torchButton)
+        torchDetail = findViewById(R.id.torchDetail)
         noiseAlertBanner = findViewById(R.id.noiseAlertBanner)
         noiseAlertDetail = findViewById(R.id.noiseAlertDetail)
         noiseAlertExplanation = findViewById(R.id.noiseAlertExplanation)
@@ -141,6 +152,19 @@ class MonitorActivity : Activity() {
             muted = !muted
             client?.setMuted(muted)
             audioButton.text = if (muted) "Audio muted" else "Audio on"
+        }
+        torchButton.setOnClickListener {
+            val requested = torchState?.enabled != true
+            if (client?.setTorch(requested) == true) {
+                pendingTorch = requested
+                torchButton.isEnabled = false
+                torchButton.text = "Updating torch…"
+                handler.removeCallbacks(torchAckTimeout)
+                handler.postDelayed(torchAckTimeout, 2_000)
+            } else {
+                pendingTorch = null
+                renderTorch("Could not reach the baby phone · reconnect the stream and try again")
+            }
         }
         noiseButton.isEnabled = false
         noiseButton.setOnClickListener {
@@ -233,7 +257,8 @@ class MonitorActivity : Activity() {
             onVideoSize = { w, h -> runOnUiThread { videoSurface.setVideoSize(w, h) } },
             onStreaming = { runOnUiThread { showLive() } },
             onNoiseState = { enabled -> runOnUiThread { updateNoiseAlertState(enabled) } },
-            onNoiseAlert = { level -> runOnUiThread { showNoiseAlert(level) } }
+            onNoiseAlert = { level -> runOnUiThread { showNoiseAlert(level) } },
+            onTorchState = { state -> runOnUiThread { updateTorchState(state) } }
         ).also {
             it.setMuted(muted)
             if (videoSurface.holder.surface.isValid) it.attachSurface(videoSurface.holder.surface)
@@ -242,6 +267,8 @@ class MonitorActivity : Activity() {
         discoveryScreen.visibility = View.GONE
         liveScreen.visibility = View.VISIBLE
         liveStatus.text = "Opening local stream…"
+        // The baby phone reports its real torch state once the stream is up.
+        updateTorchState(null)
     }
 
     private fun showLive() {
@@ -272,6 +299,54 @@ class MonitorActivity : Activity() {
                 "The alert-level control filters those events on this parent phone; lower is more sensitive. " +
                 "Live monitoring uses a foreground service and wake lock so processing can continue when the screen is off. " +
                 "Android notification and Do Not Disturb settings still apply. The percentage is relative, not calibrated dB."
+    }
+
+    /** A null [state] means no live stream has reported the torch yet, which is not the same as off. */
+    private fun updateTorchState(state: Protocol.TorchState?) {
+        handler.removeCallbacks(torchAckTimeout)
+        val requested = pendingTorch
+        pendingTorch = null
+        torchState = state
+        // The baby phone answers every request with what the camera actually holds, so a reply that
+        // does not match the request means the hardware refused it rather than that nothing happened.
+        val refused = state != null && requested != null && state.available && state.enabled != requested
+        renderTorch(
+            when {
+                !refused -> null
+                requested == true -> "The baby phone could not switch its light on"
+                else -> "The baby phone could not switch its light off"
+            }
+        )
+    }
+
+    private fun renderTorch(note: String? = null) {
+        val state = torchState
+        val streaming = client?.isRunning == true
+        // Only an explicit "no flash" from the baby phone disables the control. A state report that
+        // has not arrived yet must not leave a dead button that swallows taps.
+        torchButton.isEnabled = streaming && state?.available != false
+        torchButton.text = when {
+            state?.available == false -> "Torch unavailable"
+            state?.enabled == true -> "Turn torch off"
+            else -> "Turn torch on"
+        }
+        torchDetail.text = when {
+            note != null -> note
+            !streaming -> "Connect to the baby phone to use its light"
+            state == null -> "Ready · the baby phone has not reported its light yet"
+            !state.available -> "Unavailable · the camera in use on the baby phone has no flash"
+            state.enabled -> "On · the baby phone light is lit"
+            else -> "Off · the baby phone light is not lit"
+        }
+        torchDetail.setTextColor(
+            getColor(
+                when {
+                    note != null -> R.color.danger
+                    state?.enabled == true -> R.color.success
+                    else -> R.color.text_secondary
+                }
+            )
+        )
     }
 
     private fun showNoiseAlert(level: Int) {
@@ -389,6 +464,7 @@ class MonitorActivity : Activity() {
         super.onResume()
         updateReadiness()
         if (::noiseAlertDetail.isInitialized) updateNoiseAlertState(noiseAlertsEnabled)
+        if (::torchDetail.isInitialized) renderTorch()
     }
 
     override fun onBackPressed() { if (fullscreen) toggleFullscreen() else super.onBackPressed() }

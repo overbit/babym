@@ -25,6 +25,11 @@ devices form a direct Wi-Fi Direct link and talk only to each other.
 - The other runs in **viewer mode**: it displays the live video and plays the
   audio.
 - Audio is **one-way only** (camera → viewer). There is no talk-back.
+- The viewer can switch the **camera phone's flashlight** on and off over the
+  same direct link, to check on the cot without walking in. The camera phone
+  reports back whether its camera has a flash and whether the light is lit, and
+  the light switches off by itself when the camera phone changes camera or the
+  stream ends.
 
 ## What it does not do
 

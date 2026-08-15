@@ -1,16 +1,27 @@
-Local Baby Monitor v0.6.6 - build verification
+Local Baby Monitor v0.6.7 - build verification
 
 Expected verification for the current branch:
 - Kotlin sources compile successfully against Android API 36.
 - Android resources/layouts compile and link successfully.
-- minSdkVersion 26; targetSdkVersion 36; versionCode 14.
+- minSdkVersion 26; targetSdkVersion 36; versionCode 15.
 - Parent Monitor includes a persistent alert-level slider from 16% to 100%.
 - Parent live monitoring starts a connectedDevice foreground service and holds a partial CPU wake lock while the monitor session is active.
 - Noise notifications use a new high-importance channel with sound, vibration, and lock-screen visibility.
 - Android 13+ POST_NOTIFICATIONS permission is declared/requested for system notifications.
 - Baby noise detection still reuses the existing AudioRecord PCM stream; no second recorder is opened.
 - Parent can remotely enable/disable Baby-side sustained-noise detection and receives acknowledged state.
-- Remote flashlight control remains completely removed from UI, protocol, client, service, Camera2 code, and manifest permissions.
+- Parent control writes (torch and noise) are dispatched off the UI thread, and the Baby side sends
+  torch state off the service main thread. A socket write on either main thread throws
+  NetworkOnMainThreadException, which is a RuntimeException that StreamWriter's IOException handler
+  does not catch, so it silently fails the control on the parent and kills the service on the baby.
+- Parent can switch the Baby-side flashlight on/off and receives the state the camera actually holds.
+- Torch changes are a FLASH_MODE change on the existing TEMPLATE_RECORD repeating request: no template
+  swap, no capture-session rebuild, no CameraManager.setTorchMode() call while the camera is open, and
+  no blocking wait on FLASH_STATE. These were the v0.6.2-v0.6.4 failure modes and tools/verify_project.py
+  now fails the build if any of them reappears.
+- Torch availability comes from FLASH_INFO_AVAILABLE, so a camera without a flash reports unavailable
+  instead of offering a control that cannot work.
+- No flashlight permission is declared; the torch is driven through the already-open camera session.
 - Baby video capture remains on the uninterrupted recording request path.
 - Working v0.5.1 Wi-Fi Direct cleanup/PBC/listen-state path is carried forward.
 - Rotation-safe stream surface attach/detach remains present.
@@ -18,6 +29,10 @@ Expected verification for the current branch:
 - GitHub Actions verifies, builds, names, and uploads an installable debug APK on every push.
 
 Physical-device validation still required:
+- Remote torch on target hardware: that the light actually lights, that the reported state matches the
+  light, and that video keeps streaming uninterrupted across torch on/off. Remote torch was withdrawn in
+  v0.6.5 after failing exactly this check, so it is the gating test for this version.
+- Torch behaviour across a camera switch and across a stream drop/reconnect.
 - Practical alert-level behavior across target-phone microphones.
 - Background alert delivery on target OEM firmware.
 - Notification behavior with channel settings, Do Not Disturb, and OEM battery policies.
