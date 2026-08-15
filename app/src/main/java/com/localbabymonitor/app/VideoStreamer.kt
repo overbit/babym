@@ -32,12 +32,20 @@ class VideoStreamer(
     private var codecThread: Thread? = null
     private var inputSurface: Surface? = null
     private var selectedSize = Size(1280, 720)
+    @Volatile private var torchAvailable = false
+    @Volatile private var torchEnabled = false
+
+    val isTorchAvailable: Boolean get() = torchAvailable
+    val isTorchEnabled: Boolean get() = torchEnabled
 
     @SuppressLint("MissingPermission")
     fun start(writer: StreamWriter) {
         if (running.getAndSet(true)) return
         try {
             val cameraId = chooseCameraId()
+            torchAvailable = cameraManager.getCameraCharacteristics(cameraId)
+                .get(CameraCharacteristics.FLASH_INFO_AVAILABLE) == true
+            torchEnabled = false
             selectedSize = chooseVideoSize(cameraId)
             setupCodec(writer)
 
@@ -122,15 +130,41 @@ class VideoStreamer(
         }, cameraHandler)
     }
 
-    private fun applyRepeatingRequest() {
-        val camera = cameraDevice ?: return
-        val session = captureSession ?: return
-        val surface = inputSurface ?: return
+    private fun applyRepeatingRequest(): Boolean {
+        val camera = cameraDevice ?: return false
+        val session = captureSession ?: return false
+        val surface = inputSurface ?: return false
         val request = camera.createCaptureRequest(CameraDevice.TEMPLATE_RECORD).apply {
             addTarget(surface)
             set(CaptureRequest.CONTROL_MODE, CaptureRequest.CONTROL_MODE_AUTO)
+            if (torchAvailable) {
+                set(CaptureRequest.CONTROL_AE_MODE, CaptureRequest.CONTROL_AE_MODE_ON)
+                set(
+                    CaptureRequest.FLASH_MODE,
+                    if (torchEnabled) CaptureRequest.FLASH_MODE_TORCH else CaptureRequest.FLASH_MODE_OFF
+                )
+            }
         }.build()
-        runCatching { session.setRepeatingRequest(request, null, cameraHandler) }
+        return runCatching {
+            session.setRepeatingRequest(request, null, cameraHandler)
+            true
+        }.getOrDefault(false)
+    }
+
+    /**
+     * Switches the flash on the live capture request. The template stays TEMPLATE_RECORD and the
+     * capture session is left intact, so the encoder never sees an interruption. The submitted
+     * request is the state: FLASH_STATE is optional in Camera2 and several devices never report
+     * FLASH_STATE_FIRED for torch mode, so waiting for it would report false failures. Returns
+     * false only when the camera has no flash or the request was rejected outright.
+     */
+    fun setTorch(enabled: Boolean): Boolean {
+        if (!torchAvailable || !running.get()) return false
+        val previous = torchEnabled
+        torchEnabled = enabled
+        if (applyRepeatingRequest()) return true
+        torchEnabled = previous
+        return false
     }
 
     private fun drainEncoder(writer: StreamWriter) {
@@ -167,6 +201,8 @@ class VideoStreamer(
 
     fun stop() {
         if (!running.getAndSet(false)) return
+        // Closing the camera device below releases the flash unit, so no torch-off request is needed.
+        torchEnabled = false
         runCatching { captureSession?.stopRepeating() }
         runCatching { captureSession?.close() }
         captureSession = null

@@ -47,7 +47,7 @@ class BabyMonitorService : Service() {
     private val serviceRunning = AtomicBoolean(false)
     private var wakeLock: PowerManager.WakeLock? = null
     private var useFrontCamera = false
-    private var videoStreamer: VideoStreamer? = null
+    @Volatile private var videoStreamer: VideoStreamer? = null
     private var audioStreamer: AudioStreamer? = null
     private var currentWriter: StreamWriter? = null
     @Volatile private var noiseAlertsEnabled = true
@@ -237,6 +237,7 @@ class BabyMonitorService : Service() {
             currentWriter = writer
             startMedia(writer)
             sendNoiseState(writer)
+            sendTorchState(writer)
 
             commandThread = Thread({
                 try {
@@ -267,11 +268,36 @@ class BabyMonitorService : Service() {
     }
 
     private fun handleControlPacket(packet: Protocol.Packet, writer: StreamWriter) {
-        if (packet.type != Protocol.TYPE_NOISE_CONTROL) return
-        val enabled = runCatching { Protocol.unpackNoiseControl(packet.payload) }.getOrNull() ?: return
-        noiseAlertsEnabled = enabled
-        audioStreamer?.setNoiseAlertsEnabled(enabled)
-        sendNoiseState(writer)
+        when (packet.type) {
+            Protocol.TYPE_NOISE_CONTROL -> {
+                val enabled = runCatching { Protocol.unpackNoiseControl(packet.payload) }.getOrNull() ?: return
+                noiseAlertsEnabled = enabled
+                audioStreamer?.setNoiseAlertsEnabled(enabled)
+                sendNoiseState(writer)
+            }
+            Protocol.TYPE_TORCH_CONTROL -> {
+                val enabled = runCatching { Protocol.unpackTorchControl(packet.payload) }.getOrNull() ?: return
+                videoStreamer?.setTorch(enabled)
+                sendTorchState(writer)
+            }
+        }
+    }
+
+    /**
+     * Always reports what the camera actually holds, so a request the hardware rejected shows up
+     * on the parent phone as the torch staying off rather than as a control that silently did nothing.
+     */
+    private fun sendTorchState(writer: StreamWriter) {
+        val streamer = videoStreamer
+        writer.packet(
+            Protocol.TYPE_TORCH_STATE,
+            0,
+            0,
+            Protocol.packTorchState(
+                streamer?.isTorchAvailable == true,
+                streamer?.isTorchEnabled == true
+            )
+        )
     }
 
     private fun sendNoiseState(writer: StreamWriter) {
@@ -312,6 +338,8 @@ class BabyMonitorService : Service() {
         if (writer != null && !writer.failed) {
             videoStreamer?.stop()
             videoStreamer = VideoStreamer(this, useFrontCamera).also { it.start(writer) }
+            // The new camera starts with the torch off, and the front one usually has no flash at all.
+            sendTorchState(writer)
         }
         updateStatus(if (useFrontCamera) "Front camera selected" else "Rear camera selected")
     }

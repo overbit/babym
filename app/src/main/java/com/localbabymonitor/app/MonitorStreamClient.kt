@@ -22,7 +22,8 @@ class MonitorStreamClient(
     private val onVideoSize: (Int, Int) -> Unit,
     private val onStreaming: () -> Unit,
     private val onNoiseState: (enabled: Boolean) -> Unit,
-    private val onNoiseAlert: (levelPercent: Int) -> Unit
+    private val onNoiseAlert: (levelPercent: Int) -> Unit,
+    private val onTorchState: (state: Protocol.TorchState?) -> Unit
 ) {
     private val running = AtomicBoolean(false)
     private val decoderLock = Any()
@@ -64,6 +65,8 @@ class MonitorStreamClient(
                 runCatching { socket?.close() }
                 socket = null
                 resetDecoders(clearVideoConfig = true)
+                // Without a socket the torch state is unknown, not off; the baby phone resends it on reconnect.
+                onTorchState(null)
             }
 
             if (running.get()) {
@@ -103,6 +106,7 @@ class MonitorStreamClient(
                 Protocol.TYPE_AUDIO_FRAME -> audioDecoder?.decode(packet)
                 Protocol.TYPE_NOISE_STATE -> onNoiseState(Protocol.unpackNoiseState(packet.payload))
                 Protocol.TYPE_NOISE_ALERT -> onNoiseAlert(Protocol.unpackNoiseAlert(packet.payload))
+                Protocol.TYPE_TORCH_STATE -> onTorchState(Protocol.unpackTorchState(packet.payload))
             }
         }
     }
@@ -137,6 +141,14 @@ class MonitorStreamClient(
     fun setMuted(value: Boolean) {
         muted = value
         audioDecoder?.setMuted(value)
+    }
+
+    fun setTorch(enabled: Boolean): Boolean {
+        val stream = output ?: return false
+        return runCatching {
+            Protocol.writePacket(stream, Protocol.TYPE_TORCH_CONTROL, 0, 0, Protocol.packTorchControl(enabled))
+            true
+        }.getOrElse { false }
     }
 
     fun setNoiseAlerts(enabled: Boolean): Boolean {

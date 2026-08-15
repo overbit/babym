@@ -36,12 +36,28 @@ for token in [
         errors.append(f"manifest token missing: {token}")
 
 protocol = (root / "app/src/main/java/com/localbabymonitor/app/Protocol.kt").read_text()
-for token in ["TYPE_NOISE_ALERT", "TYPE_NOISE_CONTROL", "TYPE_NOISE_STATE", "packNoiseAlert"]:
+for token in [
+    "TYPE_NOISE_ALERT",
+    "TYPE_NOISE_CONTROL",
+    "TYPE_NOISE_STATE",
+    "packNoiseAlert",
+    "TYPE_TORCH_CONTROL",
+    "TYPE_TORCH_STATE",
+    "packTorchControl",
+    "packTorchState",
+]:
     if token not in protocol:
         errors.append(f"protocol token missing: {token}")
 
 service = (root / "app/src/main/java/com/localbabymonitor/app/BabyMonitorService.kt").read_text()
-for token in ["handleControlPacket", "TYPE_NOISE_ALERT", "TYPE_NOISE_CONTROL", "DataInputStream"]:
+for token in [
+    "handleControlPacket",
+    "TYPE_NOISE_ALERT",
+    "TYPE_NOISE_CONTROL",
+    "DataInputStream",
+    "TYPE_TORCH_CONTROL",
+    "sendTorchState",
+]:
     if token not in service:
         errors.append(f"baby service token missing: {token}")
 
@@ -51,9 +67,16 @@ for token in ["FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE", "PARTIAL_WAKE_LOCK", "
         errors.append(f"parent service token missing: {token}")
 
 video = (root / "app/src/main/java/com/localbabymonitor/app/VideoStreamer.kt").read_text()
-for token in ["TEMPLATE_RECORD", "setRepeatingRequest"]:
+for token in ["TEMPLATE_RECORD", "setRepeatingRequest", "FLASH_INFO_AVAILABLE", "FLASH_MODE_TORCH", "fun setTorch"]:
     if token not in video:
         errors.append(f"video token missing: {token}")
+# Torch control was withdrawn in v0.6.5 because the first implementation swapped capture
+# templates, blocked on FLASH_STATE, and fell back to CameraManager.setTorchMode() while the
+# camera was open. Each of those broke streaming or misreported the light on real hardware, so
+# the torch must stay a flash-mode change on the existing TEMPLATE_RECORD repeating request.
+for forbidden in ["TEMPLATE_PREVIEW", "setTorchMode", "CaptureResult", "CountDownLatch"]:
+    if forbidden in video:
+        errors.append(f"video must not reintroduce torch instability: {forbidden}")
 
 audio = (root / "app/src/main/java/com/localbabymonitor/app/AudioStreamer.kt").read_text()
 for token in ["NOISE_RMS_THRESHOLD", "NOISE_SUSTAINED_MS", "NOISE_COOLDOWN_MS", "detectNoise"]:
@@ -61,7 +84,15 @@ for token in ["NOISE_RMS_THRESHOLD", "NOISE_SUSTAINED_MS", "NOISE_COOLDOWN_MS", 
         errors.append(f"noise token missing: {token}")
 
 client = (root / "app/src/main/java/com/localbabymonitor/app/MonitorStreamClient.kt").read_text()
-for token in ["fun attachSurface", "fun detachSurface", "fun setNoiseAlerts", "onNoiseAlert", "onNoiseState"]:
+for token in [
+    "fun attachSurface",
+    "fun detachSurface",
+    "fun setNoiseAlerts",
+    "onNoiseAlert",
+    "onNoiseState",
+    "fun setTorch",
+    "onTorchState",
+]:
     if token not in client:
         errors.append(f"client token missing: {token}")
 
@@ -78,6 +109,8 @@ for token in [
     "attachSurface(holder.surface)",
     "detachSurface(holder.surface)",
     "showNoiseAlert",
+    "torchButton",
+    "updateTorchState",
 ]:
     if token not in monitor:
         errors.append(f"monitor token missing: {token}")
@@ -85,7 +118,15 @@ if "setSound(null" in monitor:
     errors.append("noise notification channel is still explicitly silent")
 
 layout = (root / "app/src/main/res/layout/activity_monitor.xml").read_text()
-for token in ["noiseButton", "noiseAlertBanner", "noiseThresholdSeekBar", "noiseThresholdLabel", "Noise alerts"]:
+for token in [
+    "noiseButton",
+    "noiseAlertBanner",
+    "noiseThresholdSeekBar",
+    "noiseThresholdLabel",
+    "Noise alerts",
+    "torchButton",
+    "torchDetail",
+]:
     if token not in layout:
         errors.append(f"layout token missing: {token}")
 
@@ -101,13 +142,6 @@ for forbidden in [
     "WifiP2pDnsSd",
     "discoverServices",
     "addLocalService",
-    "TYPE_TORCH_COMMAND",
-    "TYPE_TORCH_STATE",
-    "packTorchCommand",
-    "packTorchState",
-    "setTorch(",
-    "torchButton",
-    "FLASH_MODE_TORCH",
     "android.permission.FLASHLIGHT",
 ]:
     if forbidden in all_source:
@@ -118,10 +152,10 @@ if not re.search(r"minSdk\s*=\s*26", build):
     errors.append("minSdk is not 26")
 if not re.search(r"targetSdk\s*=\s*36", build):
     errors.append("targetSdk is not 36")
-if not re.search(r"versionCode\s*=\s*14", build):
-    errors.append("versionCode is not 14")
-if 'versionName = "0.6.6"' not in build:
-    errors.append("versionName is not 0.6.6")
+if not re.search(r"versionCode\s*=\s*15", build):
+    errors.append("versionCode is not 15")
+if 'versionName = "0.6.7"' not in build:
+    errors.append("versionName is not 0.6.7")
 for token in [
     "CI_ANDROID_KEYSTORE_PATH",
     'create("ci")',
@@ -159,4 +193,4 @@ if errors:
     sys.exit(1)
 
 print("VERIFY OK")
-print("v0.6.6 configurable noise alerts, screen-off monitoring, stable streaming, torch removal, and persistent APK signing verified.")
+print("v0.6.7 parent-controlled torch on the live capture request, configurable noise alerts, screen-off monitoring, stable streaming, and persistent APK signing verified.")
