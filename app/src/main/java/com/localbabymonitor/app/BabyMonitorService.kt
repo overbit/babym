@@ -339,7 +339,9 @@ class BabyMonitorService : Service() {
             videoStreamer?.stop()
             videoStreamer = VideoStreamer(this, useFrontCamera).also { it.start(writer) }
             // The new camera starts with the torch off, and the front one usually has no flash at all.
-            sendTorchState(writer)
+            // onStartCommand runs on the main thread, where a socket write would throw
+            // NetworkOnMainThreadException past StreamWriter's IOException handler and kill the service.
+            Thread({ sendTorchState(writer) }, "baby-torch-state").start()
         }
         updateStatus(if (useFrontCamera) "Front camera selected" else "Rear camera selected")
     }

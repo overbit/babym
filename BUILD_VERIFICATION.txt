@@ -10,6 +10,10 @@ Expected verification for the current branch:
 - Android 13+ POST_NOTIFICATIONS permission is declared/requested for system notifications.
 - Baby noise detection still reuses the existing AudioRecord PCM stream; no second recorder is opened.
 - Parent can remotely enable/disable Baby-side sustained-noise detection and receives acknowledged state.
+- Parent control writes (torch and noise) are dispatched off the UI thread, and the Baby side sends
+  torch state off the service main thread. A socket write on either main thread throws
+  NetworkOnMainThreadException, which is a RuntimeException that StreamWriter's IOException handler
+  does not catch, so it silently fails the control on the parent and kills the service on the baby.
 - Parent can switch the Baby-side flashlight on/off and receives the state the camera actually holds.
 - Torch changes are a FLASH_MODE change on the existing TEMPLATE_RECORD repeating request: no template
   swap, no capture-session rebuild, no CameraManager.setTorchMode() call while the camera is open, and

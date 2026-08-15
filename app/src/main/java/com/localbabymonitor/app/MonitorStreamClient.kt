@@ -13,6 +13,8 @@ import java.io.DataOutputStream
 import java.net.InetSocketAddress
 import java.net.Socket
 import java.nio.ByteBuffer
+import java.util.concurrent.ExecutorService
+import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
 
 class MonitorStreamClient(
@@ -31,6 +33,8 @@ class MonitorStreamClient(
     private var socket: Socket? = null
     // Written on the stream thread, read from the UI thread by the torch and noise controls.
     @Volatile private var output: DataOutputStream? = null
+    private val controlWriter: ExecutorService =
+        Executors.newSingleThreadExecutor { runnable -> Thread(runnable, "monitor-control-writer") }
     private var videoDecoder: VideoDecoder? = null
     private var audioDecoder: AudioDecoder? = null
     private var lastVideoConfig: Protocol.VideoConfig? = null
@@ -144,24 +148,31 @@ class MonitorStreamClient(
         audioDecoder?.setMuted(value)
     }
 
-    fun setTorch(enabled: Boolean): Boolean {
-        val stream = output ?: return false
+    /**
+     * Controls are tapped on the UI thread, and Android throws NetworkOnMainThreadException for a
+     * socket write there, so the write is handed to a background thread. The return value only says
+     * the request was queued against a live socket; the baby phone's state reply is what confirms it.
+     */
+    private fun sendControl(type: Int, payload: ByteArray): Boolean {
+        if (output == null) return false
         return runCatching {
-            Protocol.writePacket(stream, Protocol.TYPE_TORCH_CONTROL, 0, 0, Protocol.packTorchControl(enabled))
+            controlWriter.execute {
+                val stream = output ?: return@execute
+                runCatching { Protocol.writePacket(stream, type, 0, 0, payload) }
+            }
             true
         }.getOrElse { false }
     }
 
-    fun setNoiseAlerts(enabled: Boolean): Boolean {
-        val stream = output ?: return false
-        return runCatching {
-            Protocol.writePacket(stream, Protocol.TYPE_NOISE_CONTROL, 0, 0, Protocol.packNoiseControl(enabled))
-            true
-        }.getOrElse { false }
-    }
+    fun setTorch(enabled: Boolean): Boolean =
+        sendControl(Protocol.TYPE_TORCH_CONTROL, Protocol.packTorchControl(enabled))
+
+    fun setNoiseAlerts(enabled: Boolean): Boolean =
+        sendControl(Protocol.TYPE_NOISE_CONTROL, Protocol.packNoiseControl(enabled))
 
     fun stop() {
         running.set(false)
+        controlWriter.shutdownNow()
         runCatching { socket?.close() }
         thread?.interrupt()
         runCatching { thread?.join(700) }
