@@ -45,6 +45,10 @@ for token in [
     "TYPE_TORCH_STATE",
     "packTorchControl",
     "packTorchState",
+    "TYPE_ZOOM_CONTROL",
+    "TYPE_ZOOM_STATE",
+    "packZoomControl",
+    "packZoomState",
 ]:
     if token not in protocol:
         errors.append(f"protocol token missing: {token}")
@@ -57,6 +61,8 @@ for token in [
     "DataInputStream",
     "TYPE_TORCH_CONTROL",
     "sendTorchState",
+    "TYPE_ZOOM_CONTROL",
+    "sendZoomState",
 ]:
     if token not in service:
         errors.append(f"baby service token missing: {token}")
@@ -67,7 +73,16 @@ for token in ["FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE", "PARTIAL_WAKE_LOCK", "
         errors.append(f"parent service token missing: {token}")
 
 video = (root / "app/src/main/java/com/localbabymonitor/app/VideoStreamer.kt").read_text()
-for token in ["TEMPLATE_RECORD", "setRepeatingRequest", "FLASH_INFO_AVAILABLE", "FLASH_MODE_TORCH", "fun setTorch"]:
+for token in [
+    "TEMPLATE_RECORD",
+    "setRepeatingRequest",
+    "FLASH_INFO_AVAILABLE",
+    "FLASH_MODE_TORCH",
+    "fun setTorch",
+    "fun setZoom",
+    "CONTROL_ZOOM_RATIO",
+    "SCALER_CROP_REGION",
+]:
     if token not in video:
         errors.append(f"video token missing: {token}")
 # Torch control was withdrawn in v0.6.5 because the first implementation swapped capture
@@ -92,6 +107,8 @@ for token in [
     "onNoiseState",
     "fun setTorch",
     "onTorchState",
+    "fun setZoom",
+    "onZoomState",
 ]:
     if token not in client:
         errors.append(f"client token missing: {token}")
@@ -111,6 +128,8 @@ for token in [
     "showNoiseAlert",
     "torchButton",
     "updateTorchState",
+    "zoomSeekBar",
+    "updateZoomState",
 ]:
     if token not in monitor:
         errors.append(f"monitor token missing: {token}")
@@ -126,6 +145,8 @@ for token in [
     "Noise alerts",
     "torchButton",
     "torchDetail",
+    "zoomSeekBar",
+    "zoomDetail",
 ]:
     if token not in layout:
         errors.append(f"layout token missing: {token}")
@@ -152,10 +173,10 @@ if not re.search(r"minSdk\s*=\s*26", build):
     errors.append("minSdk is not 26")
 if not re.search(r"targetSdk\s*=\s*36", build):
     errors.append("targetSdk is not 36")
-if not re.search(r"versionCode\s*=\s*15", build):
-    errors.append("versionCode is not 15")
-if 'versionName = "0.6.7"' not in build:
-    errors.append("versionName is not 0.6.7")
+if not re.search(r"versionCode\s*=\s*16", build):
+    errors.append("versionCode is not 16")
+if 'versionName = "0.6.8"' not in build:
+    errors.append("versionName is not 0.6.8")
 for token in [
     "CI_ANDROID_KEYSTORE_PATH",
     'create("ci")',
@@ -193,4 +214,4 @@ if errors:
     sys.exit(1)
 
 print("VERIFY OK")
-print("v0.6.7 parent-controlled torch on the live capture request, configurable noise alerts, screen-off monitoring, stable streaming, and persistent APK signing verified.")
+print("v0.6.8 parent-controlled camera zoom and torch on the live capture request, configurable noise alerts, screen-off monitoring, stable streaming, and persistent APK signing verified.")

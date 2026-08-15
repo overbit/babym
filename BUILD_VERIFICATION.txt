@@ -1,9 +1,9 @@
-Local Baby Monitor v0.6.7 - build verification
+Local Baby Monitor v0.6.8 - build verification
 
 Expected verification for the current branch:
 - Kotlin sources compile successfully against Android API 36.
 - Android resources/layouts compile and link successfully.
-- minSdkVersion 26; targetSdkVersion 36; versionCode 15.
+- minSdkVersion 26; targetSdkVersion 36; versionCode 16.
 - Parent Monitor includes a persistent alert-level slider from 16% to 100%.
 - Parent live monitoring starts a connectedDevice foreground service and holds a partial CPU wake lock while the monitor session is active.
 - Noise notifications use a new high-importance channel with sound, vibration, and lock-screen visibility.
@@ -15,6 +15,12 @@ Expected verification for the current branch:
   NetworkOnMainThreadException, which is a RuntimeException that StreamWriter's IOException handler
   does not catch, so it silently fails the control on the parent and kills the service on the baby.
 - Parent can switch the Baby-side flashlight on/off and receives the state the camera actually holds.
+- Parent can zoom the Baby-side camera and receives the ratio the camera settled on. The zoom range is
+  read from CONTROL_ZOOM_RATIO_RANGE on API 30+ and from SCALER_AVAILABLE_MAX_DIGITAL_ZOOM with a
+  centred SCALER_CROP_REGION below it, so a camera that cannot zoom reports unavailable.
+- Zoom is applied to the same repeating request as the torch, under the same rules: no template swap,
+  no session rebuild, no blocking wait. Slider drags are throttled so the control channel is not
+  flooded, and the released position is always sent.
 - Torch changes are a FLASH_MODE change on the existing TEMPLATE_RECORD repeating request: no template
   swap, no capture-session rebuild, no CameraManager.setTorchMode() call while the camera is open, and
   no blocking wait on FLASH_STATE. These were the v0.6.2-v0.6.4 failure modes and tools/verify_project.py
@@ -33,6 +39,9 @@ Physical-device validation still required:
   light, and that video keeps streaming uninterrupted across torch on/off. Remote torch was withdrawn in
   v0.6.5 after failing exactly this check, so it is the gating test for this version.
 - Torch behaviour across a camera switch and across a stream drop/reconnect.
+- Zoom on target hardware: that the picture actually zooms, that video keeps streaming uninterrupted
+  while the slider is dragged, and that the reported ratio matches the picture.
+- Zoom range reported by the pre-API-30 crop-region path, which cannot be exercised on API 30+ phones.
 - Practical alert-level behavior across target-phone microphones.
 - Background alert delivery on target OEM firmware.
 - Notification behavior with channel settings, Do Not Disturb, and OEM battery policies.

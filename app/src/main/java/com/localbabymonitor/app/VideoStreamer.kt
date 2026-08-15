@@ -2,6 +2,7 @@ package com.localbabymonitor.app
 
 import android.annotation.SuppressLint
 import android.content.Context
+import android.graphics.Rect
 import android.hardware.camera2.CameraCaptureSession
 import android.hardware.camera2.CameraCharacteristics
 import android.hardware.camera2.CameraDevice
@@ -10,6 +11,7 @@ import android.hardware.camera2.CaptureRequest
 import android.media.MediaCodec
 import android.media.MediaCodecInfo
 import android.media.MediaFormat
+import android.os.Build
 import android.os.Handler
 import android.os.HandlerThread
 import android.util.Size
@@ -34,18 +36,28 @@ class VideoStreamer(
     private var selectedSize = Size(1280, 720)
     @Volatile private var torchAvailable = false
     @Volatile private var torchEnabled = false
+    @Volatile private var minZoomRatio = 1f
+    @Volatile private var maxZoomRatio = 1f
+    @Volatile private var zoomRatio = 1f
+    @Volatile private var useZoomRatioKey = false
+    private var activeArraySize: Rect? = null
 
     val isTorchAvailable: Boolean get() = torchAvailable
     val isTorchEnabled: Boolean get() = torchEnabled
+    val isZoomAvailable: Boolean get() = maxZoomRatio > minZoomRatio
+    val minZoom: Float get() = minZoomRatio
+    val maxZoom: Float get() = maxZoomRatio
+    val zoom: Float get() = zoomRatio
 
     @SuppressLint("MissingPermission")
     fun start(writer: StreamWriter) {
         if (running.getAndSet(true)) return
         try {
             val cameraId = chooseCameraId()
-            torchAvailable = cameraManager.getCameraCharacteristics(cameraId)
-                .get(CameraCharacteristics.FLASH_INFO_AVAILABLE) == true
+            val characteristics = cameraManager.getCameraCharacteristics(cameraId)
+            torchAvailable = characteristics.get(CameraCharacteristics.FLASH_INFO_AVAILABLE) == true
             torchEnabled = false
+            readZoomRange(characteristics)
             selectedSize = chooseVideoSize(cameraId)
             setupCodec(writer)
 
@@ -81,6 +93,36 @@ class VideoStreamer(
         return cameraManager.cameraIdList.firstOrNull { id ->
             cameraManager.getCameraCharacteristics(id).get(CameraCharacteristics.LENS_FACING) == wanted
         } ?: cameraManager.cameraIdList.first()
+    }
+
+    /**
+     * CONTROL_ZOOM_RATIO arrived in API 30 and is the only path that can zoom out past 1x on phones
+     * with an ultra-wide lens. Below that the crop region is the only option, which starts at 1x.
+     */
+    private fun readZoomRange(characteristics: CameraCharacteristics) {
+        activeArraySize = characteristics.get(CameraCharacteristics.SENSOR_INFO_ACTIVE_ARRAY_SIZE)
+        var min = 1f
+        var max = 1f
+        var ratioKey = false
+        if (Build.VERSION.SDK_INT >= 30) {
+            val range = characteristics.get(CameraCharacteristics.CONTROL_ZOOM_RATIO_RANGE)
+            if (range != null && range.upper > range.lower) {
+                min = range.lower
+                max = range.upper
+                ratioKey = true
+            }
+        }
+        // Reached both below API 30 and on an upgraded phone that never reported a zoom-ratio range.
+        if (!ratioKey) {
+            val digital = characteristics.get(CameraCharacteristics.SCALER_AVAILABLE_MAX_DIGITAL_ZOOM)
+            if (digital != null && digital > 1f && activeArraySize != null) max = digital
+        }
+        if (!min.isFinite() || min <= 0f) min = 1f
+        if (!max.isFinite() || max < min) max = min
+        minZoomRatio = min
+        maxZoomRatio = max
+        zoomRatio = 1f.coerceIn(min, max)
+        useZoomRatioKey = ratioKey
     }
 
     private fun chooseVideoSize(cameraId: String): Size {
@@ -144,6 +186,7 @@ class VideoStreamer(
                     if (torchEnabled) CaptureRequest.FLASH_MODE_TORCH else CaptureRequest.FLASH_MODE_OFF
                 )
             }
+            applyZoom(this)
         }.build()
         return runCatching {
             session.setRepeatingRequest(request, null, cameraHandler)
@@ -164,6 +207,38 @@ class VideoStreamer(
         torchEnabled = enabled
         if (applyRepeatingRequest()) return true
         torchEnabled = previous
+        return false
+    }
+
+    private fun applyZoom(request: CaptureRequest.Builder) {
+        if (!isZoomAvailable) return
+        if (useZoomRatioKey && Build.VERSION.SDK_INT >= 30) {
+            request.set(CaptureRequest.CONTROL_ZOOM_RATIO, zoomRatio)
+            return
+        }
+        // Crop-region zoom is a centred crop of the sensor's active array; the camera scales it back
+        // up to the stream size, so the encoder output stays exactly the same resolution.
+        val active = activeArraySize ?: return
+        val width = (active.width() / zoomRatio).toInt().coerceAtLeast(1)
+        val height = (active.height() / zoomRatio).toInt().coerceAtLeast(1)
+        val left = active.left + (active.width() - width) / 2
+        val top = active.top + (active.height() - height) / 2
+        request.set(CaptureRequest.SCALER_CROP_REGION, Rect(left, top, left + width, top + height))
+    }
+
+    /**
+     * Zooms the live capture request, under the same rules as the torch: same TEMPLATE_RECORD
+     * template, same capture session, no blocking wait. The ratio is clamped to what the camera
+     * reported, so a parent asking for more than the hardware has gets the maximum instead of a
+     * rejected request.
+     */
+    fun setZoom(ratio: Float): Boolean {
+        if (!isZoomAvailable || !running.get()) return false
+        if (!ratio.isFinite()) return false
+        val previous = zoomRatio
+        zoomRatio = ratio.coerceIn(minZoomRatio, maxZoomRatio)
+        if (applyRepeatingRequest()) return true
+        zoomRatio = previous
         return false
     }
 
@@ -203,6 +278,7 @@ class VideoStreamer(
         if (!running.getAndSet(false)) return
         // Closing the camera device below releases the flash unit, so no torch-off request is needed.
         torchEnabled = false
+        zoomRatio = minZoomRatio
         runCatching { captureSession?.stopRepeating() }
         runCatching { captureSession?.close() }
         captureSession = null

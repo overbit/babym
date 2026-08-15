@@ -32,6 +32,9 @@ import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.SeekBar
 import android.widget.TextView
+import kotlin.math.ln
+import kotlin.math.pow
+import kotlin.math.roundToInt
 
 class MonitorActivity : Activity() {
     companion object {
@@ -41,6 +44,7 @@ class MonitorActivity : Activity() {
         private const val NOISE_NOTIFICATION_ID = 21
         private const val PREFS = "monitor_preferences"
         private const val PREF_NOISE_ALERT_LEVEL = "noise_alert_level"
+        private const val ZOOM_SEND_INTERVAL_MS = 120L
         private const val MIN_NOISE_ALERT_LEVEL = 16
         private const val MAX_NOISE_ALERT_LEVEL = 100
         private const val DEFAULT_NOISE_ALERT_LEVEL = 16
@@ -59,6 +63,8 @@ class MonitorActivity : Activity() {
     private lateinit var noiseButton: Button
     private lateinit var torchButton: Button
     private lateinit var torchDetail: TextView
+    private lateinit var zoomSeekBar: SeekBar
+    private lateinit var zoomDetail: TextView
     private lateinit var noiseAlertBanner: TextView
     private lateinit var noiseAlertDetail: TextView
     private lateinit var noiseAlertExplanation: TextView
@@ -75,6 +81,9 @@ class MonitorActivity : Activity() {
     private var noiseAlertsEnabled = true
     private var torchState: Protocol.TorchState? = null
     private var pendingTorch: Boolean? = null
+    private var zoomState: Protocol.ZoomState? = null
+    private var zoomTracking = false
+    private var lastZoomSentAt = 0L
     private var noiseAlertLevel = DEFAULT_NOISE_ALERT_LEVEL
     private var fullscreen = false
     private var liveStartedAt = 0L
@@ -116,6 +125,7 @@ class MonitorActivity : Activity() {
         updateReadiness()
         updateNoiseAlertState(noiseAlertsEnabled)
         updateTorchState(null)
+        updateZoomState(null)
     }
 
     private fun bindViews() {
@@ -131,6 +141,8 @@ class MonitorActivity : Activity() {
         noiseButton = findViewById(R.id.noiseButton)
         torchButton = findViewById(R.id.torchButton)
         torchDetail = findViewById(R.id.torchDetail)
+        zoomSeekBar = findViewById(R.id.zoomSeekBar)
+        zoomDetail = findViewById(R.id.zoomDetail)
         noiseAlertBanner = findViewById(R.id.noiseAlertBanner)
         noiseAlertDetail = findViewById(R.id.noiseAlertDetail)
         noiseAlertExplanation = findViewById(R.id.noiseAlertExplanation)
@@ -166,6 +178,35 @@ class MonitorActivity : Activity() {
                 renderTorch("Could not reach the baby phone · reconnect the stream and try again")
             }
         }
+        zoomSeekBar.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
+                if (!fromUser) return
+                val state = zoomState ?: return
+                val ratio = progressToZoomRatio(progress, state)
+                renderZoom(ratio)
+                // Dragging produces a steady stream of updates; send at most one every
+                // ZOOM_SEND_INTERVAL_MS so the control channel is not flooded mid-gesture.
+                val now = SystemClock.elapsedRealtime()
+                if (now - lastZoomSentAt >= ZOOM_SEND_INTERVAL_MS) {
+                    lastZoomSentAt = now
+                    client?.setZoom(ratio)
+                }
+            }
+
+            override fun onStartTrackingTouch(seekBar: SeekBar?) {
+                zoomTracking = true
+            }
+
+            override fun onStopTrackingTouch(seekBar: SeekBar?) {
+                zoomTracking = false
+                val state = zoomState ?: return
+                // The throttle can swallow the last move, so the released position is always sent.
+                val ratio = progressToZoomRatio(seekBar?.progress ?: 0, state)
+                lastZoomSentAt = SystemClock.elapsedRealtime()
+                client?.setZoom(ratio)
+                renderZoom(ratio)
+            }
+        })
         noiseButton.isEnabled = false
         noiseButton.setOnClickListener {
             val requested = !noiseAlertsEnabled
@@ -258,7 +299,8 @@ class MonitorActivity : Activity() {
             onStreaming = { runOnUiThread { showLive() } },
             onNoiseState = { enabled -> runOnUiThread { updateNoiseAlertState(enabled) } },
             onNoiseAlert = { level -> runOnUiThread { showNoiseAlert(level) } },
-            onTorchState = { state -> runOnUiThread { updateTorchState(state) } }
+            onTorchState = { state -> runOnUiThread { updateTorchState(state) } },
+            onZoomState = { state -> runOnUiThread { updateZoomState(state) } }
         ).also {
             it.setMuted(muted)
             if (videoSurface.holder.surface.isValid) it.attachSurface(videoSurface.holder.surface)
@@ -267,8 +309,9 @@ class MonitorActivity : Activity() {
         discoveryScreen.visibility = View.GONE
         liveScreen.visibility = View.VISIBLE
         liveStatus.text = "Opening local stream…"
-        // The baby phone reports its real torch state once the stream is up.
+        // The baby phone reports its real torch and zoom state once the stream is up.
         updateTorchState(null)
+        updateZoomState(null)
     }
 
     private fun showLive() {
@@ -317,6 +360,49 @@ class MonitorActivity : Activity() {
                 else -> "The baby phone could not switch its light off"
             }
         )
+    }
+
+    /**
+     * The slider is geometric rather than linear: on a camera that reaches 10x, half the travel gets
+     * you to about 3x, which keeps the useful close-range end of the range easy to land on.
+     */
+    private fun progressToZoomRatio(progress: Int, state: Protocol.ZoomState): Float {
+        if (state.maxRatio <= state.minRatio) return state.minRatio
+        val fraction = progress.coerceIn(0, 100) / 100.0
+        val ratio = state.minRatio * (state.maxRatio / state.minRatio).toDouble().pow(fraction)
+        return ratio.toFloat().coerceIn(state.minRatio, state.maxRatio)
+    }
+
+    private fun zoomRatioToProgress(ratio: Float, state: Protocol.ZoomState): Int {
+        if (state.maxRatio <= state.minRatio) return 0
+        val fraction = ln(ratio / state.minRatio) / ln(state.maxRatio / state.minRatio)
+        return (fraction * 100).roundToInt().coerceIn(0, 100)
+    }
+
+    private fun updateZoomState(state: Protocol.ZoomState?) {
+        zoomState = state
+        // A state echo arriving mid-gesture must not drag the slider out from under the finger.
+        if (zoomTracking) return
+        renderZoom()
+    }
+
+    private fun renderZoom(ratio: Float? = null) {
+        val state = zoomState
+        val streaming = client?.isRunning == true
+        val usable = streaming && state != null && state.available
+        zoomSeekBar.isEnabled = usable
+        val shown = ratio ?: state?.ratio
+        if (usable && state != null && !zoomTracking && shown != null) {
+            zoomSeekBar.progress = zoomRatioToProgress(shown, state)
+        }
+        zoomDetail.text = when {
+            !streaming -> "Connect to the baby phone to zoom its camera"
+            state == null -> "Waiting for the baby phone to report its zoom range"
+            !state.available -> "Unavailable · the camera in use on the baby phone cannot zoom"
+            else -> "%.1fx · up to %.1fx".format(shown ?: state.ratio, state.maxRatio)
+        }
+        val zoomedIn = state != null && shown != null && shown > state.minRatio
+        zoomDetail.setTextColor(getColor(if (zoomedIn) R.color.success else R.color.text_secondary))
     }
 
     private fun renderTorch(note: String? = null) {
@@ -465,6 +551,7 @@ class MonitorActivity : Activity() {
         updateReadiness()
         if (::noiseAlertDetail.isInitialized) updateNoiseAlertState(noiseAlertsEnabled)
         if (::torchDetail.isInitialized) renderTorch()
+        if (::zoomDetail.isInitialized) renderZoom()
     }
 
     override fun onBackPressed() { if (fullscreen) toggleFullscreen() else super.onBackPressed() }
