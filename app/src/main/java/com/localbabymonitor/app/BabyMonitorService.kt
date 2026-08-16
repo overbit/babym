@@ -238,6 +238,7 @@ class BabyMonitorService : Service() {
             startMedia(writer)
             sendNoiseState(writer)
             sendTorchState(writer)
+            sendZoomState(writer)
 
             commandThread = Thread({
                 try {
@@ -280,7 +281,28 @@ class BabyMonitorService : Service() {
                 videoStreamer?.setTorch(enabled)
                 sendTorchState(writer)
             }
+            Protocol.TYPE_ZOOM_CONTROL -> {
+                val ratio = runCatching { Protocol.unpackZoomControl(packet.payload) }.getOrNull() ?: return
+                videoStreamer?.setZoom(ratio)
+                sendZoomState(writer)
+            }
         }
+    }
+
+    /** Reports the ratio the camera settled on, which is clamped to what the hardware supports. */
+    private fun sendZoomState(writer: StreamWriter) {
+        val streamer = videoStreamer
+        writer.packet(
+            Protocol.TYPE_ZOOM_STATE,
+            0,
+            0,
+            Protocol.packZoomState(
+                streamer?.isZoomAvailable == true,
+                streamer?.minZoom ?: 1f,
+                streamer?.maxZoom ?: 1f,
+                streamer?.zoom ?: 1f
+            )
+        )
     }
 
     /**
@@ -338,10 +360,14 @@ class BabyMonitorService : Service() {
         if (writer != null && !writer.failed) {
             videoStreamer?.stop()
             videoStreamer = VideoStreamer(this, useFrontCamera).also { it.start(writer) }
-            // The new camera starts with the torch off, and the front one usually has no flash at all.
-            // onStartCommand runs on the main thread, where a socket write would throw
-            // NetworkOnMainThreadException past StreamWriter's IOException handler and kill the service.
-            Thread({ sendTorchState(writer) }, "baby-torch-state").start()
+            // The new camera starts with the torch off and its own zoom range, and the front one
+            // usually has no flash at all. onStartCommand runs on the main thread, where a socket
+            // write would throw NetworkOnMainThreadException past StreamWriter's IOException handler
+            // and kill the service.
+            Thread({
+                sendTorchState(writer)
+                sendZoomState(writer)
+            }, "baby-camera-state").start()
         }
         updateStatus(if (useFrontCamera) "Front camera selected" else "Rear camera selected")
     }

@@ -13,8 +13,8 @@ android {
         applicationId = "com.localbabymonitor.app"
         minSdk = 26
         targetSdk = 36
-        versionCode = 15
-        versionName = "0.6.7"
+        versionCode = 16
+        versionName = "0.6.8"
     }
 
     signingConfigs {

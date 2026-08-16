@@ -9,8 +9,8 @@ import java.io.EOFException
 object Protocol {
     const val PORT = 8988
     const val MAGIC = 0x424D4F4E // BMON
-    // Unchanged by the torch messages: both peers ignore packet types they do not know,
-    // so a 0.6.6 phone still streams against a torch-capable one.
+    // Unchanged by the torch and zoom messages: both peers ignore packet types they do not know,
+    // so an older phone still streams against a newer one, without those controls.
     const val VERSION = 2
     const val TYPE_VIDEO_CONFIG = 1
     const val TYPE_VIDEO_FRAME = 2
@@ -21,6 +21,8 @@ object Protocol {
     const val TYPE_NOISE_ALERT = 7
     const val TYPE_NOISE_CONTROL = 8
     const val TYPE_NOISE_STATE = 9
+    const val TYPE_ZOOM_CONTROL = 10
+    const val TYPE_ZOOM_STATE = 11
 
     private const val MAX_PACKET_SIZE = 4 * 1024 * 1024
 
@@ -51,6 +53,17 @@ object Protocol {
     data class TorchState(
         val available: Boolean,
         val enabled: Boolean
+    )
+
+    /**
+     * [available] is false when the streaming camera cannot zoom, in which case the ratios are all
+     * 1x. [minRatio] can be below 1x on phones whose camera reports an ultra-wide range.
+     */
+    data class ZoomState(
+        val available: Boolean,
+        val minRatio: Float,
+        val maxRatio: Float,
+        val ratio: Float
     )
 
     @Synchronized
@@ -149,6 +162,43 @@ object Protocol {
     fun unpackTorchState(payload: ByteArray): TorchState {
         require(payload.size == 2) { "Invalid torch state" }
         return TorchState(payload[0].toInt() != 0, payload[1].toInt() != 0)
+    }
+
+    fun packZoomControl(ratio: Float): ByteArray {
+        val bytes = ByteArrayOutputStream(4)
+        DataOutputStream(bytes).use { it.writeFloat(ratio) }
+        return bytes.toByteArray()
+    }
+
+    fun unpackZoomControl(payload: ByteArray): Float {
+        require(payload.size == 4) { "Invalid zoom control" }
+        val ratio = DataInputStream(ByteArrayInputStream(payload)).use { it.readFloat() }
+        require(ratio.isFinite() && ratio > 0f) { "Invalid zoom ratio: $ratio" }
+        return ratio
+    }
+
+    fun packZoomState(available: Boolean, minRatio: Float, maxRatio: Float, ratio: Float): ByteArray {
+        val bytes = ByteArrayOutputStream(13)
+        DataOutputStream(bytes).use { out ->
+            out.writeByte(if (available) 1 else 0)
+            out.writeFloat(minRatio)
+            out.writeFloat(maxRatio)
+            out.writeFloat(ratio)
+        }
+        return bytes.toByteArray()
+    }
+
+    fun unpackZoomState(payload: ByteArray): ZoomState {
+        require(payload.size == 13) { "Invalid zoom state" }
+        DataInputStream(ByteArrayInputStream(payload)).use { input ->
+            val available = input.readUnsignedByte() != 0
+            val minRatio = input.readFloat()
+            val maxRatio = input.readFloat()
+            val ratio = input.readFloat()
+            require(minRatio.isFinite() && maxRatio.isFinite() && ratio.isFinite()) { "Invalid zoom state" }
+            require(minRatio > 0f && maxRatio >= minRatio) { "Invalid zoom range" }
+            return ZoomState(available, minRatio, maxRatio, ratio.coerceIn(minRatio, maxRatio))
+        }
     }
 
     fun packNoiseControl(enabled: Boolean): ByteArray = byteArrayOf(if (enabled) 1 else 0)

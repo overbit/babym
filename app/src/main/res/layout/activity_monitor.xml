@@ -53,10 +53,9 @@
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         android:orientation="vertical"
-        android:padding="12dp"
         android:visibility="gone">
 
-        <LinearLayout android:id="@+id/liveHeader" android:layout_width="match_parent" android:layout_height="52dp" android:gravity="center_vertical">
+        <LinearLayout android:id="@+id/liveHeader" android:layout_width="match_parent" android:layout_height="52dp" android:gravity="center_vertical" android:paddingLeft="8dp" android:paddingRight="12dp">
             <TextView android:id="@+id/liveBackButton" android:layout_width="44dp" android:layout_height="44dp" android:gravity="center" android:text="‹" android:textColor="@color/text_primary" android:textSize="34sp" />
             <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:orientation="vertical">
                 <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Baby Camera" android:textColor="@color/text_primary" android:textSize="18sp" android:textStyle="bold" />
@@ -64,20 +63,28 @@
             </LinearLayout>
         </LinearLayout>
 
-        <TextView android:id="@+id/noiseAlertBanner" android:layout_width="match_parent" android:layout_height="48dp" android:layout_marginBottom="8dp" android:background="@drawable/bg_noise_alert" android:gravity="center_vertical" android:paddingLeft="16dp" android:text="Noise detected" android:textColor="@color/danger" android:textSize="15sp" android:textStyle="bold" android:visibility="gone" />
+        <TextView android:id="@+id/noiseAlertBanner" android:layout_width="match_parent" android:layout_height="48dp" android:layout_marginLeft="12dp" android:layout_marginRight="12dp" android:layout_marginBottom="8dp" android:background="@drawable/bg_noise_alert" android:gravity="center_vertical" android:paddingLeft="16dp" android:text="Noise detected" android:textColor="@color/danger" android:textSize="15sp" android:textStyle="bold" android:visibility="gone" />
 
         <FrameLayout android:id="@+id/videoFrame" android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1" android:background="@color/video_bg" android:foregroundGravity="center">
             <com.localbabymonitor.app.AspectRatioSurfaceView android:id="@+id/videoSurface" android:layout_width="match_parent" android:layout_height="match_parent" android:layout_gravity="center" />
             <TextView android:id="@+id/liveStatus" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_gravity="bottom|left" android:layout_margin="12dp" android:background="@drawable/bg_overlay" android:paddingLeft="10dp" android:paddingTop="6dp" android:paddingRight="10dp" android:paddingBottom="6dp" android:text="Opening local stream…" android:textColor="#FFFFFFFF" android:textSize="12sp" />
+            <TextView android:id="@+id/fullscreenHint" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_gravity="bottom|right" android:layout_margin="12dp" android:background="@drawable/bg_overlay" android:paddingLeft="10dp" android:paddingTop="6dp" android:paddingRight="10dp" android:paddingBottom="6dp" android:text="Tap to enlarge" android:textColor="#FFFFFFFF" android:textSize="12sp" />
         </FrameLayout>
 
-        <LinearLayout android:id="@+id/liveControls" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="10dp" android:orientation="horizontal">
+        <LinearLayout android:id="@+id/liveControls" android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:padding="12dp">
             <Button android:id="@+id/audioButton" style="@style/Button.Secondary" android:layout_width="0dp" android:layout_height="50dp" android:layout_weight="1" android:layout_marginRight="4dp" android:text="Audio on" />
-            <Button android:id="@+id/fullscreenButton" style="@style/Button.Secondary" android:layout_width="0dp" android:layout_height="50dp" android:layout_weight="1" android:layout_marginLeft="4dp" android:text="Fullscreen" />
+            <Button android:id="@+id/fullscreenButton" style="@style/Button.Secondary" android:layout_width="0dp" android:layout_height="50dp" android:layout_weight="1" android:layout_marginLeft="4dp" android:layout_marginRight="4dp" android:text="Fullscreen" />
+            <Button android:id="@+id/controlsButton" style="@style/Button.Secondary" android:layout_width="0dp" android:layout_height="50dp" android:layout_weight="1" android:layout_marginLeft="4dp" android:text="Controls" />
         </LinearLayout>
 
-        <LinearLayout android:id="@+id/liveInfoCard" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="10dp" android:background="@drawable/bg_card" android:orientation="vertical" android:padding="14dp">
-            <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="Baby phone light" android:textColor="@color/text_primary" android:textSize="16sp" android:textStyle="bold" />
+        <ScrollView android:id="@+id/liveInfoCard" android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1" android:paddingLeft="12dp" android:paddingRight="12dp" android:paddingBottom="12dp" android:visibility="gone">
+        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:background="@drawable/bg_card" android:orientation="vertical" android:padding="14dp">
+            <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="Camera zoom" android:textColor="@color/text_primary" android:textSize="16sp" android:textStyle="bold" />
+            <TextView android:id="@+id/zoomDetail" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="4dp" android:text="Waiting for the baby phone to report its zoom range" android:textColor="@color/text_secondary" android:textSize="13sp" android:textStyle="bold" />
+            <SeekBar android:id="@+id/zoomSeekBar" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="6dp" android:enabled="false" android:max="100" android:progress="0" />
+            <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="Zooms the baby phone camera itself, so the picture keeps its detail. The stream size does not change." android:textColor="@color/text_secondary" android:textSize="11sp" android:lineSpacingExtra="2dp" />
+
+            <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="14dp" android:text="Baby phone light" android:textColor="@color/text_primary" android:textSize="16sp" android:textStyle="bold" />
             <TextView android:id="@+id/torchDetail" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="4dp" android:text="Waiting for the baby phone to report its light" android:textColor="@color/text_secondary" android:textSize="13sp" android:textStyle="bold" />
             <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="4dp" android:text="Switches the flashlight on the baby phone over the local connection. It stays on until you turn it off, and switches off if the baby phone changes camera or the stream ends." android:textColor="@color/text_secondary" android:textSize="11sp" android:lineSpacingExtra="2dp" />
             <Button android:id="@+id/torchButton" style="@style/Button.Secondary" android:layout_width="match_parent" android:layout_height="48dp" android:layout_marginTop="10dp" android:enabled="false" android:text="Turn torch on" />
@@ -92,5 +99,6 @@
             <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="14dp" android:text="Connection · Wi‑Fi Direct" android:textColor="@color/text_primary" android:textSize="14sp" android:textStyle="bold" />
             <Button android:id="@+id/reconnectButton" style="@style/Button.Secondary" android:layout_width="match_parent" android:layout_height="44dp" android:layout_marginTop="8dp" android:text="Reconnect stream" />
         </LinearLayout>
+        </ScrollView>
     </LinearLayout>
 </FrameLayout>
