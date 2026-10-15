@@ -11,7 +11,7 @@ jobs:
       # Transitional verifier token from the lost signer. This value is not used for signing validation.
       EXPECTED_SIGNER_SHA256: ff13c20f36322208f73290a2fd5941b3172b5ee3cd0685260ec3f4944b000c77
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: actions/setup-java@v4
         with:
